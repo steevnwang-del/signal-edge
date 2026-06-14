@@ -1,7 +1,5 @@
 import { useState } from 'react';
 import RadarChart from './RadarChart';
-import AIBox from './AIBox';
-import { buildPlayerPrompt } from '../services/aiAnalysis';
 
 const C = { navy:'#0F3460', white:'#FFFFFF', dark:'#111827', muted:'#6B7280', border:'#D4D8DF', borderLight:'#E9EBF0', win:'#059669', amber:'#D97706', bg:'#F6F7FA' };
 
@@ -25,18 +23,14 @@ const PercentileBar = ({ label, value, raw, color }) => (
       </div>
     </div>
     <div style={{ height:4, background:C.borderLight, borderRadius:2, overflow:'hidden', position:'relative' }}>
-      <div style={{ width:'50%', height:'100%', borderRight:'1.5px dashed #9CA3AF', position:'absolute', top:0 }}/>
+      <div style={{ position:'absolute', left:'50%', width:'1px', height:'100%', background:'#9CA3AF', top:0 }}/>
       <div style={{ width:`${value}%`, height:'100%', background:color, borderRadius:2 }}/>
     </div>
   </div>
 );
 
 export default function PlayerCard({ player, sport, sportColor = '#0F3460' }) {
-  const [showAI, setShowAI] = useState(false);
-  const aiPrompt = player.stats ? buildPlayerPrompt(
-    { name: player.name, team: player.team, position: player.pos || player.role, sport },
-    Object.fromEntries((player.stats || []).map(s => [s.label, `${s.raw || s.value} (百分位:${s.value}%)`]))
-  ) : '';
+  const [expanded, setExpanded] = useState(false);
 
   return (
     <div style={{ background:C.white, border:`1px solid ${C.border}`, borderTop:`3px solid ${sportColor}`, borderRadius:10, padding:'16px 14px' }}>
@@ -57,14 +51,19 @@ export default function PlayerCard({ player, sport, sportColor = '#0F3460' }) {
             <RadarChart stats={player.stats} color={sportColor} size={80}/>
           </div>
           <div style={{ marginBottom:10 }}>
-            {player.stats.map(s => <PercentileBar key={s.label} label={s.label} value={s.value} raw={s.raw || ''} color={sportColor}/>)}
+            {player.stats.slice(0, expanded ? 6 : 3).map(s => (
+              <PercentileBar key={s.label} label={s.label} value={s.value} raw={s.raw || ''} color={sportColor}/>
+            ))}
           </div>
+          <button onClick={() => setExpanded(!expanded)} style={{ width:'100%', background:'transparent', border:`1px solid ${C.border}`, borderRadius:6, padding:'6px', cursor:'pointer', fontSize:11, color:C.muted, marginBottom:10 }}>
+            {expanded ? '▲ 收合' : '▼ 展開全部屬性'}
+          </button>
         </>
       )}
 
       {player.recent && (
-        <div style={{ background:C.bg, borderRadius:6, padding:'8px 10px', marginBottom:10 }}>
-          <div style={{ fontSize:9, fontWeight:700, color:C.muted, letterSpacing:0.5, marginBottom:5 }}>近期數據</div>
+        <div style={{ background:C.bg, borderRadius:6, padding:'8px 10px', marginBottom:8 }}>
+          <div style={{ fontSize:9, fontWeight:700, color:C.muted, letterSpacing:0.5, marginBottom:5 }}>近期場均</div>
           <div style={{ display:'flex', gap:12, flexWrap:'wrap' }}>
             {Object.entries(player.recent).map(([k,v]) => (
               <div key={k}>
@@ -76,19 +75,20 @@ export default function PlayerCard({ player, sport, sportColor = '#0F3460' }) {
         </div>
       )}
 
-      {player.form && (
-        <div style={{ display:'flex', gap:4, alignItems:'center', marginBottom:10 }}>
-          <span style={{ fontSize:10, color:C.muted }}>近況</span>
-          {player.form.map((r,i) => <div key={i} style={{ width:10, height:10, borderRadius:'50%', background:r==='W'?C.win:r==='L'?'#DC2626':C.amber }}/>)}
+      {/* 靜態 AI 分析（admin 預先生成，用戶唯讀） */}
+      {player.aiAnalysis && (
+        <div style={{ background:'#EFF6FF', border:'1px solid #BFDBFE', borderRadius:6, padding:'10px 12px' }}>
+          <div style={{ fontSize:9, fontWeight:700, color:C.navy, letterSpacing:0.5, marginBottom:5 }}>📊 數據分析</div>
+          <p style={{ fontSize:12, color:C.dark, lineHeight:1.7, margin:0 }}>{player.aiAnalysis}</p>
         </div>
       )}
 
-      {aiPrompt && (
-        <button onClick={() => setShowAI(!showAI)} style={{ width:'100%', background:'transparent', border:`1px solid ${C.border}`, borderRadius:6, padding:'7px', cursor:'pointer', fontSize:12, color:C.navy, fontWeight:600, marginBottom: showAI?10:0 }}>
-          {showAI ? '▲ 收合 AI 分析' : '▼ 展開 AI 分析'}
-        </button>
+      {player.form && (
+        <div style={{ display:'flex', gap:4, alignItems:'center', marginTop:10 }}>
+          <span style={{ fontSize:10, color:C.muted }}>近況</span>
+          {player.form.map((r,i)=><div key={i} style={{ width:10, height:10, borderRadius:'50%', background:r==='W'?C.win:r==='L'?'#DC2626':C.amber }}/>)}
+        </div>
       )}
-      {showAI && aiPrompt && <AIBox prompt={aiPrompt} type="player" title="選手 AI 分析"/>}
     </div>
   );
 }
