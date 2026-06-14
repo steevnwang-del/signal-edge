@@ -1,5 +1,5 @@
 import { C } from '../constants/colors';
-export const SettlementToast = ({ signal }) => {
+export default function SettlementToast({ signal }) {
   if (!signal) return null;
   return (
     <div style={{ position: "fixed", bottom: 24, right: 24, zIndex: 999, background: signal.status === "win" ? "#065F46" : "#7F1D1D", color: "#fff", borderRadius: 10, padding: "14px 20px", boxShadow: "0 8px 32px rgba(0,0,0,0.25)", display: "flex", alignItems: "center", gap: 12, maxWidth: 320 }}>
