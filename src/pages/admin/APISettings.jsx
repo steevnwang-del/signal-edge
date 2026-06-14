@@ -2,158 +2,179 @@ import { useState } from 'react';
 
 const C = { navy:'#0F3460', white:'#FFFFFF', dark:'#111827', muted:'#6B7280', border:'#D4D8DF', borderLight:'#E9EBF0', bg:'#ECEEF2', amber:'#D97706', win:'#059669', loss:'#DC2626', panelAlt:'#F6F7FA' };
 
-const API_SOURCES = [
-  {
-    category: '賠率數據',
-    items: [
-      { id:'odds', name:'The Odds API', url:'the-odds-api.com', desc:'多平台即時賠率比對', free:false, keyName:'ODDS_API_KEY', applyUrl:'https://the-odds-api.com', quota:'500次/月', priority:'high' },
-      { id:'betfair', name:'Betfair Exchange', url:'betfair.com/exchange', desc:'全球最大賠率交易所，最接近真實市場', free:false, keyName:'BETFAIR_API_KEY', applyUrl:'https://developer.betfair.com', quota:'無限制', priority:'high' },
-      { id:'polymarket', name:'Polymarket API', url:'polymarket.com', desc:'去中心化預測市場，反映真實社群勝率判斷', free:true, keyName:null, applyUrl:'https://polymarket.com', quota:'完全免費', priority:'high' },
-      { id:'twlottery', name:'台灣運彩', url:'sportslottery.com.tw', desc:'政府合法投注，官方賠率參考（需手動輸入）', free:true, keyName:null, applyUrl:'https://www.sportslottery.com.tw', quota:'公開查詢', priority:'high' },
-    ]
-  },
-  {
-    category: '足球 / 世界杯',
-    items: [
-      { id:'footballdata', name:'football-data.org', url:'football-data.org', desc:'歐洲聯賽+世界杯官方比賽數據，隊伍戰績', free:false, keyName:'FOOTBALL_DATA_KEY', applyUrl:'https://www.football-data.org/client/register', quota:'10次/分鐘（免費）', priority:'high' },
-      { id:'apifootball', name:'API-Football', url:'api-football.com', desc:'選手數據、陣容、傷病報告、賽程', free:false, keyName:'API_FOOTBALL_KEY', applyUrl:'https://www.api-football.com/register', quota:'100次/天（免費）', priority:'high' },
-      { id:'fbref', name:'FBref 進階統計', url:'fbref.com', desc:'xG、傳球精準率等進階指標（爬取）', free:true, keyName:null, applyUrl:'https://fbref.com', quota:'公開爬取', priority:'medium' },
-    ]
-  },
-  {
-    category: 'NBA 籃球',
-    items: [
-      { id:'balldontlie', name:'Ball Don\'t Lie API', url:'balldontlie.io', desc:'NBA球員數據、賽事結果、場均統計', free:true, keyName:null, applyUrl:'https://www.balldontlie.io', quota:'完全免費', priority:'high' },
-      { id:'nbastats', name:'NBA Stats API', url:'stats.nba.com', desc:'進階數據：PER、BPM、VORP等百分位數據', free:true, keyName:null, applyUrl:'https://stats.nba.com', quota:'完全免費（非官方）', priority:'high' },
-      { id:'espn', name:'ESPN Unofficial API', url:'site.api.espn.com', desc:'比賽即時比分、球員狀態、傷病報告', free:true, keyName:null, applyUrl:'https://site.api.espn.com/apis/site/v2/sports', quota:'完全免費', priority:'medium' },
-    ]
-  },
-  {
-    category: 'MLB 棒球',
-    items: [
-      { id:'mlbstats', name:'MLB Stats API（官方）', url:'statsapi.mlb.com', desc:'MLB官方數據，打擊率、防禦率、賽事結果', free:true, keyName:null, applyUrl:'https://statsapi.mlb.com', quota:'完全免費（官方）', priority:'high' },
-    ]
-  },
-  {
-    category: '電競',
-    items: [
-      { id:'riot', name:'Riot Games API', url:'developer.riotgames.com', desc:'LOL/Valorant選手數據、天梯排名、英雄勝率', free:false, keyName:'RIOT_API_KEY', applyUrl:'https://developer.riotgames.com', quota:'20次/秒（免費）', priority:'high' },
-      { id:'opendota', name:'OpenDota API', url:'opendota.com', desc:'Dota2全部數據，選手統計、比賽記錄', free:true, keyName:null, applyUrl:'https://www.opendota.com/api-keys', quota:'50,000次/月免費', priority:'medium' },
-      { id:'pandascore', name:'PandaScore', url:'pandascore.co', desc:'電競多項目：LOL/CS2/Valorant/Dota2賽事數據', free:false, keyName:'PANDASCORE_KEY', applyUrl:'https://pandascore.co', quota:'100次/天（免費）', priority:'medium' },
-      { id:'liquipedia', name:'Liquipedia API', url:'liquipedia.net', desc:'電競賽事百科：隊伍資料、賽程、歷史戰績', free:true, keyName:null, applyUrl:'https://liquipedia.net/api.php', quota:'完全免費', priority:'high' },
-    ]
-  },
-  {
-    category: 'AI 分析',
-    items: [
-      { id:'gemini', name:'Gemini 1.5 Flash', url:'aistudio.google.com', desc:'AI分析引擎，生成中文賽事/選手/隊伍分析', free:false, keyName:'GEMINI_API_KEY', applyUrl:'https://aistudio.google.com', quota:'1,500次/天（免費）', priority:'high' },
-      { id:'newsapi', name:'News API', url:'newsapi.org', desc:'英文體育新聞聚合，供AI翻譯標題用', free:false, keyName:'NEWS_API_KEY', applyUrl:'https://newsapi.org/register', quota:'100次/天（免費）', priority:'medium' },
-    ]
-  },
+const ALL_SOURCES = [
+  // 需要 Key 的
+  { id:'gemini',       name:'Gemini AI',         envKey:'GEMINI_API_KEY',    free:false, category:'AI 分析',    desc:'AI 賽事/選手/隊伍分析引擎', quota:'1,500次/天', url:'aistudio.google.com', source:'gemini', action:'analyze', testParams:{ prompt:'測試', type:'general' } },
+  { id:'odds',         name:'The Odds API',       envKey:'ODDS_API_KEY',      free:false, category:'賠率數據',   desc:'多平台即時賠率比對', quota:'500次/月', url:'the-odds-api.com', source:'odds', action:'getSports', testParams:{} },
+  { id:'footballdata', name:'football-data.org',  envKey:'FOOTBALL_DATA_KEY', free:false, category:'足球',       desc:'足球/世界杯官方比賽數據', quota:'10次/分鐘', url:'football-data.org', source:'football', action:'getStandings', testParams:{ competition:'WC' } },
+  { id:'apisports',   name:'API-Sports',          envKey:'API_SPORTS_KEY',    free:false, category:'多項運動',   desc:'足球+籃球+棒球+F1+AFL', quota:'100次/天/項目', url:'api-sports.io', source:'nba', action:'getGames', testParams:{} },
+  { id:'riot',         name:'Riot Games API',     envKey:'RIOT_API_KEY',      free:false, category:'電競',       desc:'LOL 選手/天梯/英雄數據', quota:'20次/秒', url:'developer.riotgames.com', source:'esports', action:'lolPlayer', testParams:{ summonerName:'Faker', region:'kr' } },
+  { id:'newsapi',      name:'News API',           envKey:'NEWS_API_KEY',      free:false, category:'新聞',       desc:'英文體育新聞聚合', quota:'100次/天', url:'newsapi.org', source:'news', action:'getNewsAPI', testParams:{ query:'sports', limit:3 } },
+  // 完全免費
+  { id:'polymarket',   name:'Polymarket',         envKey:null, free:true, category:'預測市場', desc:'去中心化預測市場勝率', quota:'無限制', url:'polymarket.com', source:'polymarket', action:'getSportsMarkets', testParams:{} },
+  { id:'balldontlie',  name:'Ball Don\'t Lie',    envKey:null, free:true, category:'NBA',      desc:'NBA 球員/賽事統計', quota:'完全免費', url:'balldontlie.io', source:'nba', action:'getGames', testParams:{} },
+  { id:'mlbstats',     name:'MLB Stats API',      envKey:null, free:true, category:'MLB',      desc:'棒球官方數據（官方）', quota:'完全免費', url:'statsapi.mlb.com', source:'mlb', action:'getSchedule', testParams:{} },
+  { id:'opendota',     name:'OpenDota',           envKey:null, free:true, category:'電競',     desc:'Dota2 全部數據', quota:'50,000次/月', url:'opendota.com', source:'esports', action:'dota2Player', testParams:{ accountId:'87278757' } },
+  { id:'liquipedia',   name:'Liquipedia',         envKey:null, free:true, category:'電競',     desc:'電競賽事百科', quota:'完全免費', url:'liquipedia.net', source:'esports', action:'getTeam', testParams:{ teamName:'T1', game:'leagueoflegends' } },
+  { id:'rss',          name:'RSS Feeds',          envKey:null, free:true, category:'新聞',     desc:'ESPN/BBC/Dot Esports等媒體', quota:'完全免費', url:'多媒體來源', source:'news', action:'getLatest', testParams:{ limit:3 } },
+  { id:'espn',         name:'ESPN unofficial',    envKey:null, free:true, category:'多項運動', desc:'NBA新聞/比分/球員狀態', quota:'完全免費', url:'site.api.espn.com', source:'nba', action:'getNews', testParams:{} },
 ];
 
-const PRIORITY_LABELS = { high:'核心', medium:'建議', low:'選配' };
-const PRIORITY_COLORS = { high: C.win, medium: C.amber, low: C.muted };
+const CATEGORIES = ['全部', 'AI 分析', '賠率數據', '足球', '多項運動', 'NBA', 'MLB', '電競', '新聞', '預測市場'];
+
+const StatusDot = ({ status }) => {
+  const config = {
+    ok:      { color:C.win,  bg:'#ECFDF5', label:'● 連線正常' },
+    error:   { color:C.loss, bg:'#FEF2F2', label:'● 連線失敗' },
+    testing: { color:C.amber,bg:'#FFFBEB', label:'● 測試中...' },
+    free:    { color:C.win,  bg:'#ECFDF5', label:'● 免費直接使用' },
+    pending: { color:C.muted,bg:C.panelAlt,label:'● 未測試' },
+    nokey:   { color:C.loss, bg:'#FEF2F2', label:'● Key 未設定' },
+  }[status] || { color:C.muted, bg:C.panelAlt, label:'● 未知' };
+  return <span style={{ fontSize:11, fontWeight:700, color:config.color, background:config.bg, padding:'3px 9px', borderRadius:4 }}>{config.label}</span>;
+};
 
 export default function APISettings() {
-  const [keys, setKeys] = useState({
-    ODDS_API_KEY: '5ba08b6badbdf966df73eac3e2030dfa',
-    GEMINI_API_KEY: '已設定（Vercel環境變數）',
-  });
-  const [show, setShow] = useState({});
-  const [saved, setSaved] = useState({});
+  const [statuses, setStatuses] = useState({});
+  const [testing, setTesting] = useState({});
+  const [filter, setFilter] = useState('全部');
+  const [testAll, setTestAll] = useState(false);
 
-  const saveKey = (keyName, val) => {
-    setKeys(p => ({ ...p, [keyName]: val }));
-    setSaved(p => ({ ...p, [keyName]: true }));
-    setTimeout(() => setSaved(p => ({ ...p, [keyName]: false })), 2000);
+  const filtered = ALL_SOURCES.filter(s => filter === '全部' || s.category === filter);
+
+  const testOne = async (src) => {
+    if (src.free) return;
+    setTesting(p => ({ ...p, [src.id]: true }));
+    setStatuses(p => ({ ...p, [src.id]: 'testing' }));
+    try {
+      const r = await fetch('/api/gateway', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ source: src.source, action: src.action, params: src.testParams }),
+      });
+      const data = await r.json();
+      setStatuses(p => ({ ...p, [src.id]: data.success ? 'ok' : 'error' }));
+    } catch {
+      setStatuses(p => ({ ...p, [src.id]: 'error' }));
+    }
+    setTesting(p => ({ ...p, [src.id]: false }));
   };
 
-  const configured = Object.keys(keys).filter(k => keys[k]).length;
-  const freeCount = API_SOURCES.flatMap(c=>c.items).filter(i=>i.free).length;
-  const totalCount = API_SOURCES.flatMap(c=>c.items).length;
+  const testAllAPIs = async () => {
+    setTestAll(true);
+    for (const src of ALL_SOURCES.filter(s => !s.free)) {
+      await testOne(src);
+      await new Promise(r => setTimeout(r, 800));
+    }
+    setTestAll(false);
+  };
+
+  const configuredCount = ALL_SOURCES.filter(s => !s.free).length;
+  const freeCount = ALL_SOURCES.filter(s => s.free).length;
+  const okCount = Object.values(statuses).filter(s => s === 'ok').length;
 
   return (
     <div>
-      {/* Stats */}
-      <div style={{ display:'grid', gridTemplateColumns:'repeat(4,1fr)', gap:10, marginBottom:20 }}>
+      {/* 統計卡 */}
+      <div style={{ display:'grid', gridTemplateColumns:'repeat(4,1fr)', gap:10, marginBottom:16 }}>
         {[
-          { label:'已設定 API', val:`${configured}`, unit:`/${API_SOURCES.flatMap(c=>c.items).filter(i=>!i.free).length}`, color:C.win },
-          { label:'完全免費數據源', val:freeCount.toString(), unit:'個', color:C.amber },
-          { label:'總數據源', val:totalCount.toString(), unit:'個' },
-          { label:'每日 AI 額度', val:'1,500', unit:'次', color:C.navy },
+          { label:'需要 Key 的數據源', val:`${configuredCount}`, unit:'個', color:C.navy },
+          { label:'完全免費數據源', val:`${freeCount}`, unit:'個', color:C.win },
+          { label:'總數據源', val:`${ALL_SOURCES.length}`, unit:'個' },
+          { label:'連線測試通過', val:`${okCount}`, unit:`/${configuredCount}`, color:okCount===configuredCount?C.win:C.amber },
         ].map(s => (
           <div key={s.label} style={{ background:C.white, border:`1px solid ${C.border}`, borderRadius:8, padding:'12px 14px' }}>
             <div style={{ fontSize:10, color:C.muted, marginBottom:4 }}>{s.label}</div>
-            <div style={{ fontSize:20, fontWeight:800, color:s.color||C.dark, fontFamily:'ui-monospace,monospace' }}>{s.val}<span style={{ fontSize:12, fontWeight:600 }}>{s.unit}</span></div>
+            <div style={{ fontSize:22, fontWeight:800, color:s.color||C.dark, fontFamily:'ui-monospace,monospace' }}>{s.val}<span style={{ fontSize:12 }}>{s.unit}</span></div>
           </div>
         ))}
       </div>
 
-      <div style={{ background:'#EFF6FF', border:'1px solid #BFDBFE', borderRadius:8, padding:'10px 14px', marginBottom:16, fontSize:12, color:C.navy }}>
-        ⚠️ API Key 請在 <strong>Vercel → Settings → Environment Variables</strong> 設定，不要在這裡儲存真實 key。這裡的輸入框只用於測試連線狀態。
+      {/* 警告 */}
+      <div style={{ background:'#FFFBEB', border:'1px solid #FDE68A', borderRadius:8, padding:'10px 14px', marginBottom:14, fontSize:12, color:'#92400E' }}>
+        ⚠️ API Key 只能在 <strong>Vercel → Settings → Environment Variables</strong> 設定，不要在這裡貼真實 key。這裡只做連線狀態測試。
       </div>
 
-      {API_SOURCES.map(cat => (
-        <div key={cat.category} style={{ marginBottom:20 }}>
-          <div style={{ fontSize:12, fontWeight:700, color:C.dark, marginBottom:10, letterSpacing:0.5, display:'flex', alignItems:'center', gap:8 }}>
-            {cat.category}
-            <span style={{ fontSize:10, color:C.muted, fontWeight:400 }}>{cat.items.length} 個數據源</span>
-          </div>
-          <div style={{ display:'grid', gap:8 }}>
-            {cat.items.map(api => {
-              const hasKey = api.free || !!keys[api.keyName];
-              return (
-                <div key={api.id} style={{ background:C.white, border:`1px solid ${C.border}`, borderRadius:9, padding:'14px 18px' }}>
-                  <div style={{ display:'flex', alignItems:'flex-start', gap:14, flexWrap:'wrap' }}>
-                    <div style={{ flex:1, minWidth:200 }}>
-                      <div style={{ display:'flex', gap:8, alignItems:'center', marginBottom:4, flexWrap:'wrap' }}>
-                        <span style={{ fontSize:14, fontWeight:700, color:C.dark }}>{api.name}</span>
-                        <span style={{ fontSize:10, fontWeight:700, padding:'2px 7px', borderRadius:3, background:PRIORITY_COLORS[api.priority]+'18', color:PRIORITY_COLORS[api.priority] }}>{PRIORITY_LABELS[api.priority]}</span>
-                        {api.free
-                          ? <span style={{ fontSize:10, fontWeight:700, color:C.win, background:'#ECFDF5', padding:'2px 7px', borderRadius:3 }}>● 免費無需Key</span>
-                          : <span style={{ fontSize:10, fontWeight:700, color:hasKey?C.win:C.loss, background:hasKey?'#ECFDF5':'#FEF2F2', padding:'2px 7px', borderRadius:3 }}>{hasKey?'● 已設定':'● 未設定'}</span>
-                        }
-                      </div>
-                      <div style={{ fontSize:12, color:C.muted, marginBottom:4 }}>{api.desc}</div>
-                      <div style={{ display:'flex', gap:12, fontSize:11, color:C.muted }}>
-                        <span>🔗 {api.url}</span>
-                        <span>📊 {api.quota}</span>
-                      </div>
-                    </div>
+      {/* 操作列 */}
+      <div style={{ display:'flex', gap:10, marginBottom:16, flexWrap:'wrap', alignItems:'center' }}>
+        <button onClick={testAllAPIs} disabled={testAll} style={{ background:testAll?C.muted:C.navy, color:C.white, border:'none', padding:'9px 18px', borderRadius:7, cursor:'pointer', fontSize:13, fontWeight:700 }}>
+          {testAll ? '⏳ 測試中...' : '🔌 一鍵測試所有連線'}
+        </button>
+        <div style={{ display:'flex', border:`1px solid ${C.border}`, borderRadius:7, overflow:'hidden', background:C.white }}>
+          {CATEGORIES.slice(0,6).map(cat => (
+            <button key={cat} onClick={()=>setFilter(cat)} style={{ padding:'7px 12px', border:'none', cursor:'pointer', background:filter===cat?C.navy:'transparent', color:filter===cat?C.white:C.muted, fontSize:11, fontWeight:600, borderRight:`1px solid ${C.borderLight}` }}>{cat}</button>
+          ))}
+        </div>
+      </div>
 
-                    <div style={{ display:'flex', gap:8, alignItems:'center', flexShrink:0 }}>
-                      {!api.free && (
-                        <div style={{ display:'flex', gap:6, alignItems:'center' }}>
-                          <input
-                            type={show[api.keyName]?'text':'password'}
-                            placeholder={`${api.keyName}...`}
-                            value={keys[api.keyName]||''}
-                            onChange={e=>setKeys(p=>({...p,[api.keyName]:e.target.value}))}
-                            style={{ padding:'6px 10px', border:`1px solid ${C.border}`, borderRadius:5, fontSize:12, width:200, fontFamily:'ui-monospace,monospace', color:C.dark, background:C.white }}
-                          />
-                          <button onClick={()=>setShow(p=>({...p,[api.keyName]:!p[api.keyName]}))}
-                            style={{ background:'transparent', border:`1px solid ${C.border}`, borderRadius:5, padding:'6px 8px', cursor:'pointer', fontSize:11, color:C.muted }}>
-                            {show[api.keyName]?'🙈':'👁'}
-                          </button>
-                          <button onClick={()=>saveKey(api.keyName, keys[api.keyName])}
-                            style={{ background:saved[api.keyName]?C.win:C.navy, color:C.white, border:'none', borderRadius:5, padding:'6px 12px', cursor:'pointer', fontSize:11, fontWeight:700 }}>
-                            {saved[api.keyName]?'✓':'儲存'}
-                          </button>
-                        </div>
-                      )}
-                      <a href={api.applyUrl} target="_blank" rel="noopener noreferrer"
-                        style={{ fontSize:11, color:C.navy, background:'#EFF6FF', border:'1px solid #BFDBFE', padding:'6px 12px', borderRadius:5, textDecoration:'none', fontWeight:600, whiteSpace:'nowrap' }}>
-                        申請 →
-                      </a>
-                    </div>
+      {/* 數據源列表 */}
+      <div style={{ display:'grid', gap:8 }}>
+        {filtered.map(src => {
+          const status = src.free ? 'free' : (statuses[src.id] || 'pending');
+          return (
+            <div key={src.id} style={{ background:C.white, border:`1px solid ${C.border}`, borderLeft:`4px solid ${src.free?C.win:C.navy}`, borderRadius:'0 9px 9px 0', padding:'14px 18px' }}>
+              <div style={{ display:'flex', alignItems:'center', gap:12, flexWrap:'wrap' }}>
+                <div style={{ flex:1, minWidth:200 }}>
+                  <div style={{ display:'flex', gap:8, alignItems:'center', marginBottom:4, flexWrap:'wrap' }}>
+                    <span style={{ fontSize:14, fontWeight:700, color:C.dark }}>{src.name}</span>
+                    <span style={{ fontSize:10, fontWeight:700, background:C.navy+'18', color:C.navy, padding:'1px 7px', borderRadius:3 }}>{src.category}</span>
+                    {src.free && <span style={{ fontSize:10, fontWeight:700, background:'#ECFDF5', color:C.win, padding:'1px 7px', borderRadius:3 }}>免費無需Key</span>}
+                    <StatusDot status={status}/>
+                  </div>
+                  <div style={{ fontSize:12, color:C.muted, marginBottom:3 }}>{src.desc}</div>
+                  <div style={{ display:'flex', gap:14, fontSize:11, color:C.muted }}>
+                    <span>🔗 {src.url}</span>
+                    <span>📊 {src.quota}</span>
+                    {src.envKey && <span style={{ fontFamily:'ui-monospace,monospace', color:C.navy }}>{src.envKey}</span>}
                   </div>
                 </div>
-              );
-            })}
+                {!src.free && (
+                  <button onClick={()=>testOne(src)} disabled={testing[src.id]}
+                    style={{ background:'transparent', border:`1px solid ${C.navy}`, color:C.navy, padding:'7px 14px', borderRadius:6, cursor:'pointer', fontSize:12, fontWeight:700, flexShrink:0, opacity:testing[src.id]?0.6:1 }}>
+                    {testing[src.id] ? '測試中...' : '測試連線'}
+                  </button>
+                )}
+              </div>
+
+              {/* 連線失敗提示 */}
+              {status === 'error' && (
+                <div style={{ marginTop:10, padding:'8px 12px', background:'#FEF2F2', border:'1px solid #FECACA', borderRadius:5, fontSize:11, color:C.loss }}>
+                  ⚠️ 連線失敗 — 請確認 {src.envKey} 已正確設定於 Vercel 環境變數，並且 Redeploy 過
+                </div>
+              )}
+
+              {/* 連線成功顯示 */}
+              {status === 'ok' && (
+                <div style={{ marginTop:10, padding:'8px 12px', background:'#ECFDF5', border:'1px solid #A7F3D0', borderRadius:5, fontSize:11, color:C.win }}>
+                  ✅ 連線正常，數據可正常讀取
+                </div>
+              )}
+            </div>
+          );
+        })}
+      </div>
+
+      {/* 數據流狀態 */}
+      <div style={{ marginTop:20, background:C.white, border:`1px solid ${C.border}`, borderRadius:10, padding:'16px 18px' }}>
+        <div style={{ fontSize:13, fontWeight:700, color:C.dark, marginBottom:12 }}>📊 數據流狀態</div>
+        {[
+          { label:'Vercel Cron（每日自動分析）', status:'需設定 vercel.json', color:C.amber },
+          { label:'Gemini AI 分析生成', status:'等待 Cron 觸發', color:C.amber },
+          { label:'賠率數據更新', status:'Key 已設定，等待調用', color:C.amber },
+          { label:'足球/世界杯數據', status:'Key 已設定，等待調用', color:C.amber },
+          { label:'籃球/棒球數據', status:'Key 已設定，等待調用', color:C.amber },
+          { label:'LOL 電競數據', status:'Key 已設定（24h過期）', color:C.amber },
+          { label:'新聞 RSS 聚合', status:'免費，隨時可用', color:C.win },
+        ].map(row => (
+          <div key={row.label} style={{ display:'flex', justifyContent:'space-between', alignItems:'center', padding:'8px 0', borderBottom:`1px solid ${C.borderLight}` }}>
+            <span style={{ fontSize:12, color:C.dark }}>{row.label}</span>
+            <span style={{ fontSize:11, fontWeight:700, color:row.color }}>{row.status}</span>
           </div>
+        ))}
+        <div style={{ marginTop:12, padding:'10px 12px', background:'#EFF6FF', border:'1px solid #BFDBFE', borderRadius:6, fontSize:12, color:C.navy }}>
+          💡 要讓真實數據進來：先上傳 v8 的 <code>api/gateway.js</code> 和 <code>lib/sources/</code> 資料夾到 GitHub，然後點「一鍵測試所有連線」確認。
         </div>
-      ))}
+      </div>
     </div>
   );
 }
