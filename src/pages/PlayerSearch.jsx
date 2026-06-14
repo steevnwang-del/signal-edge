@@ -1,74 +1,112 @@
 import { useState } from 'react';
 import PlayerCard from '../components/PlayerCard';
-import { getNBAPlayers, getNBAPlayerStats, nbaStatsToRadar } from '../services/sportsApi';
-import { getAIAnalysis, buildPlayerPrompt } from '../services/aiAnalysis';
+import RadarChart from '../components/RadarChart';
 
-const C = { navy:'#0F3460', white:'#FFFFFF', dark:'#111827', muted:'#6B7280', border:'#D4D8DF', bg:'#ECEEF2', amber:'#D97706' };
-const SPORT_C = { NBA:'#C9082A', 足球:'#065F46', MLB:'#002D72', LOL:'#C89B3C', Valorant:'#FF4655' };
+const C = { navy:'#0F3460', white:'#FFFFFF', dark:'#111827', muted:'#6B7280', border:'#D4D8DF', borderLight:'#E9EBF0', bg:'#ECEEF2', amber:'#D97706', win:'#059669', loss:'#DC2626', panelAlt:'#F6F7FA' };
+const SPORT_C = { NBA:'#C9082A', 足球:'#065F46', MLB:'#002D72', LOL:'#C89B3C' };
 
-// Mock 數據 - 串接 API 後自動替換
-const MOCK_PLAYERS = [
-  { id:1, name:'Jayson Tatum', team:'波士頓塞爾提克', pos:'SF', sport:'NBA', ovr:91, form:['W','W','L','W','W'], recent:{ '得分':28.4, '籃板':8.1, '助攻':4.8 },
-    stats:[{ label:'得分效率', value:87, raw:'TS% 63.2%' },{ label:'進攻貢獻', value:79, raw:'OBPM +3.8' },{ label:'防守貢獻', value:68, raw:'DBPM +1.2' },{ label:'籃板控制', value:74, raw:'TRB% 17.8%' },{ label:'傳球創造', value:61, raw:'AST/TO 2.1' },{ label:'整體價值', value:82, raw:'VORP 4.2' }] },
-  { id:2, name:'Stephen Curry', team:'金州勇士', pos:'PG', sport:'NBA', ovr:95, form:['W','W','W','L','W'], recent:{ '得分':31.2, '籃板':4.5, '助攻':6.3 },
-    stats:[{ label:'得分效率', value:95, raw:'TS% 68.1%' },{ label:'進攻貢獻', value:96, raw:'OBPM +8.1' },{ label:'防守貢獻', value:48, raw:'DBPM -0.8' },{ label:'籃板控制', value:38, raw:'TRB% 6.2%' },{ label:'傳球創造', value:89, raw:'AST/TO 4.1' },{ label:'整體價值', value:94, raw:'VORP 7.8' }] },
-  { id:3, name:'Faker', team:'T1', pos:'中單', sport:'LOL', ovr:99, form:['W','W','W','W','W'], recent:{ KDA:6.8, '傷害':18200, '補兵':312 },
-    stats:[{ label:'傷害輸出', value:96, raw:'18.2k/場' },{ label:'資源效率', value:94, raw:'CS 312/場' },{ label:'視野控制', value:91, raw:'VS 45/場' },{ label:'生存能力', value:97, raw:'死亡 0.8/場' },{ label:'參戰貢獻', value:95, raw:'KP 82%' },{ label:'對線數據', value:93, raw:'CSD+15 +18' }] },
-  { id:4, name:'Kylian Mbappé', team:'皇家馬德里', pos:'FW', sport:'足球', ovr:92, form:['W','W','W','D','W'], recent:{ '進球':1.2, '助攻':0.6, 'xG':1.18 },
-    stats:[{ label:'進球威脅', value:94, raw:'xG 1.18/90' },{ label:'傳球創造', value:78, raw:'xA 0.42/90' },{ label:'持球能力', value:89, raw:'盤帶成功 72%' },{ label:'壓迫強度', value:71, raw:'壓迫 18/90' },{ label:'防守參與', value:28, raw:'搶斷 0.8/90' },{ label:'跑動效率', value:97, raw:'速度 4.82m/s' }] },
-];
+const callGateway = async (source, action, params) => {
+  const r = await fetch('/api/gateway', { method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify({ source, action, params }) });
+  const d = await r.json();
+  return d.success ? d.result : null;
+};
+
+// NBA stats → radar
+const nbaToRadar = (s) => s ? [
+  { label:'得分效率', value:Math.min(100,Math.round((s.fg_pct||0.4)*220)), raw:`FG% ${((s.fg_pct||0)*100).toFixed(1)}%` },
+  { label:'得分貢獻', value:Math.min(100,Math.round((s.pts||10)*3)),        raw:`${(s.pts||0).toFixed(1)} PPG` },
+  { label:'防守貢獻', value:Math.min(100,Math.round((s.stl||0.7)*55+(s.blk||0.3)*35)), raw:`抄 ${(s.stl||0).toFixed(1)} 蓋 ${(s.blk||0).toFixed(1)}` },
+  { label:'籃板控制', value:Math.min(100,Math.round((s.reb||4)*8)),          raw:`${(s.reb||0).toFixed(1)} RPG` },
+  { label:'傳球創造', value:Math.min(100,Math.round((s.ast||2.5)*11)),       raw:`${(s.ast||0).toFixed(1)} APG` },
+  { label:'綜合效率', value:Math.min(100,Math.round(((s.pts||0)+(s.reb||0)+(s.ast||0))*2.2)), raw:`綜合 ${((s.pts||0)+(s.reb||0)+(s.ast||0)).toFixed(1)}` },
+] : [];
+
+const calcOVR = (stats) => {
+  if (!stats.length) return 75;
+  return Math.min(99, Math.round(stats.reduce((s,v)=>s+v.value,0)/stats.length));
+};
+
+const Spinner = () => (
+  <div style={{ textAlign:'center', padding:40 }}>
+    <div style={{ width:32, height:32, border:`3px solid ${C.border}`, borderTopColor:C.navy, borderRadius:'50%', animation:'spin 0.8s linear infinite', display:'inline-block' }}/>
+    <style>{`@keyframes spin{to{transform:rotate(360deg)}}`}</style>
+  </div>
+);
 
 export default function PlayerSearch() {
   const [query, setQuery] = useState('');
-  const [sport, setSport] = useState('全部');
+  const [sport, setSport] = useState('NBA');
   const [searching, setSearching] = useState(false);
-  const [results, setResults] = useState(MOCK_PLAYERS);
-  const [liveResult, setLiveResult] = useState(null);
+  const [results, setResults] = useState([]);
+  const [error, setError] = useState('');
 
-  const sports = ['全部','NBA','足球','MLB','LOL','Valorant'];
+  const sports = ['NBA', 'LOL', '足球', 'MLB'];
 
-  const filtered = results.filter(p =>
-    (sport === '全部' || p.sport === sport) &&
-    (query === '' || p.name.toLowerCase().includes(query.toLowerCase()) || p.team.includes(query))
-  );
-
-  // 方案B：即時搜尋 - 搜尋 API → AI 生成卡片
-  const handleLiveSearch = async () => {
+  const search = async () => {
     if (!query.trim()) return;
     setSearching(true);
-    setLiveResult(null);
+    setResults([]);
+    setError('');
 
-    // 如果選了 NBA，嘗試從 API 取得真實數據
-    if (sport === 'NBA') {
-      const players = await getNBAPlayers(query);
-      if (players.length > 0) {
-        const p = players[0];
-        const stats = await getNBAPlayerStats(p.id);
-        const radarStats = stats ? nbaStatsToRadar(stats) : null;
-        if (radarStats) {
-          setLiveResult({
+    try {
+      if (sport === 'NBA') {
+        const players = await callGateway('nba', 'searchPlayer', { name: query });
+        if (!players?.players?.length) { setError('找不到球員，試試英文名字（例：Curry, James, Durant）'); setSearching(false); return; }
+        const found = [];
+        for (const p of players.players.slice(0,3)) {
+          const statsData = await callGateway('nba', 'getPlayerStats', { playerId: p.id, season: 2024 });
+          const stats = nbaToRadar(statsData?.stats);
+          found.push({
             id: p.id, name: `${p.first_name} ${p.last_name}`,
             team: p.team?.full_name || '未知隊伍', pos: p.position || 'N/A',
-            sport: 'NBA', ovr: Math.round(((stats.pts||0)*2 + (stats.reb||0) + (stats.ast||0)) / 4 * 3) || 75,
-            stats: radarStats,
-            recent: { '得分': (stats.pts||0).toFixed(1), '籃板': (stats.reb||0).toFixed(1), '助攻': (stats.ast||0).toFixed(1) },
+            sport: 'NBA', ovr: calcOVR(stats), stats,
+            recent: statsData?.stats ? {
+              '得分': (statsData.stats.pts||0).toFixed(1),
+              '籃板': (statsData.stats.reb||0).toFixed(1),
+              '助攻': (statsData.stats.ast||0).toFixed(1),
+            } : {},
           });
-          setSearching(false);
-          return;
         }
+        setResults(found);
       }
-    }
 
-    // Fallback: AI 根據名字生成分析
-    const analysis = await getAIAnalysis(
-      `請描述 ${query} 這位${sport !== '全部' ? sport : '運動'}選手的基本資料和主要特點，用繁體中文，100字以內。如果不確定資料，請說明。`,
-      'general'
-    );
-    setLiveResult({
-      id: 'search', name: query, team: '搜尋結果', pos: '—', sport,
-      ovr: '—', stats: [], recent: {},
-      aiNote: analysis,
-    });
+      if (sport === 'LOL') {
+        const data = await callGateway('esports', 'lolPlayer', { summonerName: query, region: 'kr' });
+        if (data?.error || !data?.summoner) { setError('找不到召喚師，確認名字正確且是 KR 服（例：Faker, Chovy）'); setSearching(false); return; }
+        const ranked = data.ranked;
+        const wins = ranked?.wins || 0, losses = ranked?.losses || 0;
+        const wr = wins+losses > 0 ? Math.round(wins/(wins+losses)*100) : 50;
+        setResults([{
+          id: data.summoner.id, name: query,
+          team: ranked?.leagueName || 'KR 天梯', pos: '召喚師',
+          sport: 'LOL', ovr: Math.min(99, 60 + Math.round(wr*0.4)),
+          stats: [
+            { label:'天梯段位', value: Math.min(100, (ranked?.leaguePoints||0)/100*30+40), raw: ranked ? `${ranked.tier} ${ranked.rank}` : 'Unranked' },
+            { label:'勝率', value: wr, raw: `${wr}% (${wins}勝${losses}敗)` },
+            { label:'LP', value: Math.min(100, (ranked?.leaguePoints||0)/10), raw: `${ranked?.leaguePoints||0} LP` },
+          ],
+          recent: { 勝場: wins, 敗場: losses, '勝率': `${wr}%` },
+        }]);
+      }
+
+      if (sport === '足球') {
+        const data = await callGateway('football', 'searchPlayer', { name: query });
+        if (!data?.players?.length) { setError('找不到球員，試試英文名字（例：Mbappe, Haaland）'); setSearching(false); return; }
+        setResults(data.players.slice(0,3).map(p => ({
+          id: p.player?.id, name: p.player?.name || query,
+          team: p.statistics?.[0]?.team?.name || '未知隊伍', pos: p.statistics?.[0]?.games?.position || 'N/A',
+          sport: '足球', ovr: 80,
+          stats: [
+            { label:'出場數', value: Math.min(100, (p.statistics?.[0]?.games?.appearences||0)*3), raw: `${p.statistics?.[0]?.games?.appearences||0} 場` },
+            { label:'進球', value: Math.min(100, (p.statistics?.[0]?.goals?.total||0)*8), raw: `${p.statistics?.[0]?.goals?.total||0} 球` },
+            { label:'助攻', value: Math.min(100, (p.statistics?.[0]?.goals?.assists||0)*10), raw: `${p.statistics?.[0]?.goals?.assists||0} 次` },
+          ],
+          recent: {},
+        })));
+      }
+    } catch (e) {
+      setError('搜尋失敗：' + e.message);
+    }
     setSearching(false);
   };
 
@@ -76,52 +114,54 @@ export default function PlayerSearch() {
     <div style={{ background:C.bg, minHeight:'100vh' }}>
       <div style={{ maxWidth:1100, margin:'0 auto', padding:'28px 20px' }}>
         <div style={{ marginBottom:22 }}>
-          <div style={{ fontSize:11, fontWeight:700, letterSpacing:1.5, color:C.amber, marginBottom:6, textTransform:'uppercase' }}>選手數據庫</div>
-          <h2 style={{ fontSize:26, fontWeight:900, color:C.dark, margin:'0 0 6px' }}>選手百分位數分析</h2>
-          <p style={{ color:C.muted, fontSize:13, margin:0 }}>所有指標基於真實聯盟統計數據，顯示相對聯盟水平的百分位排名</p>
+          <div style={{ fontSize:11, fontWeight:700, letterSpacing:1.5, color:C.amber, marginBottom:6, textTransform:'uppercase' }}>真實選手數據</div>
+          <h2 style={{ fontSize:26, fontWeight:900, color:C.dark, margin:'0 0 6px' }}>選手即時搜尋</h2>
+          <p style={{ color:C.muted, fontSize:13, margin:0 }}>搜尋任何選手 → 即時拉取真實統計 → 生成能力雷達圖</p>
         </div>
 
-        {/* Search Bar */}
-        <div style={{ display:'flex', gap:10, marginBottom:16, flexWrap:'wrap' }}>
-          <input value={query} onChange={e => setQuery(e.target.value)} onKeyDown={e => e.key==='Enter' && handleLiveSearch()}
-            placeholder="搜尋選手名字... (例: Curry, Faker, Mbappé)"
-            style={{ flex:1, minWidth:200, padding:'10px 14px', border:`1px solid ${C.border}`, borderRadius:8, fontSize:14, color:C.dark, outline:'none', background:C.white }}/>
-          <select value={sport} onChange={e => setSport(e.target.value)}
-            style={{ padding:'10px 14px', border:`1px solid ${C.border}`, borderRadius:8, fontSize:13, color:C.dark, background:C.white }}>
-            {sports.map(s => <option key={s}>{s}</option>)}
-          </select>
-          <button onClick={handleLiveSearch} disabled={searching}
-            style={{ padding:'10px 20px', background:C.navy, color:C.white, border:'none', borderRadius:8, cursor:'pointer', fontSize:13, fontWeight:700, opacity:searching?0.7:1 }}>
-            {searching ? '搜尋中...' : '🔍 搜尋'}
+        {/* 搜尋框 */}
+        <div style={{ display:'flex', gap:10, marginBottom:20, flexWrap:'wrap' }}>
+          <input value={query} onChange={e=>setQuery(e.target.value)} onKeyDown={e=>e.key==='Enter'&&search()}
+            placeholder={sport==='NBA'?'輸入球員英文名（例：Curry）':sport==='LOL'?'輸入召喚師名（例：Faker）':sport==='足球'?'輸入球員英文名（例：Mbappe）':'搜尋...'}
+            style={{ flex:1, minWidth:220, padding:'11px 14px', border:`1px solid ${C.border}`, borderRadius:8, fontSize:14, color:C.dark, outline:'none', background:C.white }}/>
+          <div style={{ display:'flex', border:`1px solid ${C.border}`, borderRadius:8, overflow:'hidden', background:C.white }}>
+            {sports.map(s => (
+              <button key={s} onClick={()=>setSport(s)} style={{ padding:'0 16px', border:'none', cursor:'pointer', background:sport===s?(SPORT_C[s]||C.navy):'transparent', color:sport===s?C.white:C.muted, fontSize:13, fontWeight:700 }}>{s}</button>
+            ))}
+          </div>
+          <button onClick={search} disabled={searching||!query.trim()}
+            style={{ padding:'11px 24px', background:C.navy, color:C.white, border:'none', borderRadius:8, cursor:'pointer', fontSize:14, fontWeight:700, opacity:searching||!query.trim()?0.6:1 }}>
+            {searching?'搜尋中...':'🔍 搜尋'}
           </button>
         </div>
 
-        {/* Live Search Result */}
-        {liveResult && (
-          <div style={{ marginBottom:20 }}>
-            <div style={{ fontSize:12, fontWeight:700, color:C.dark, marginBottom:10 }}>搜尋結果</div>
-            {liveResult.aiNote ? (
-              <div style={{ background:C.white, border:`1px solid ${C.border}`, borderRadius:10, padding:'16px 18px' }}>
-                <div style={{ fontSize:16, fontWeight:800, color:C.dark, marginBottom:8 }}>{liveResult.name}</div>
-                <p style={{ fontSize:13, color:C.muted, lineHeight:1.8, margin:0 }}>{liveResult.aiNote}</p>
-              </div>
-            ) : (
-              <PlayerCard player={liveResult} sport={liveResult.sport} sportColor={SPORT_C[liveResult.sport]||C.navy}/>
-            )}
+        {searching && <Spinner/>}
+
+        {error && (
+          <div style={{ background:'#FEF2F2', border:'1px solid #FECACA', borderRadius:8, padding:'12px 16px', color:C.loss, fontSize:13, marginBottom:16 }}>
+            ⚠️ {error}
           </div>
         )}
 
-        {/* Player Grid */}
-        <div style={{ fontSize:12, fontWeight:700, color:C.dark, marginBottom:12 }}>
-          精選選手 · {filtered.length} 位
-          <span style={{ fontSize:10, color:C.muted, fontWeight:400, marginLeft:8 }}>點擊「展開 AI 分析」取得即時分析</span>
-        </div>
-        <div style={{ display:'grid', gridTemplateColumns:'repeat(auto-fill,minmax(280px,1fr))', gap:16 }}>
-          {filtered.map(p => <PlayerCard key={p.id} player={p} sport={p.sport} sportColor={SPORT_C[p.sport]||C.navy}/>)}
-        </div>
+        {results.length > 0 && (
+          <>
+            <div style={{ fontSize:12, fontWeight:700, color:C.dark, marginBottom:12 }}>找到 {results.length} 位選手</div>
+            <div style={{ display:'grid', gridTemplateColumns:'repeat(auto-fill,minmax(300px,1fr))', gap:16 }}>
+              {results.map(p => <PlayerCard key={p.id} player={p} sport={p.sport} sportColor={SPORT_C[p.sport]||C.navy}/>)}
+            </div>
+          </>
+        )}
 
-        <div style={{ marginTop:18, padding:'12px 16px', background:'#EFF6FF', border:'1px solid #BFDBFE', borderRadius:8, fontSize:12, color:C.navy }}>
-          📊 數據來源：Ball Don't Lie API（NBA）、Liquipedia（電競）、公開統計庫。百分位排名相較同運動同賽季所有球員計算。
+        {!searching && results.length === 0 && !error && (
+          <div style={{ background:C.white, border:`1px solid ${C.border}`, borderRadius:10, padding:'40px 20px', textAlign:'center', color:C.muted }}>
+            <div style={{ fontSize:32, marginBottom:12 }}>🔍</div>
+            <div style={{ fontSize:14, fontWeight:700, color:C.dark, marginBottom:6 }}>搜尋任何選手</div>
+            <div style={{ fontSize:13 }}>NBA：Curry / James / Tatum<br/>LOL：Faker / Chovy / Zeus<br/>足球：Mbappe / Haaland</div>
+          </div>
+        )}
+
+        <div style={{ marginTop:18, padding:'10px 14px', background:'#EFF6FF', border:'1px solid #BFDBFE', borderRadius:8, fontSize:12, color:C.navy }}>
+          📊 NBA：Ball Don't Lie API · LOL：Riot Games API（24h key）· 足球：API-Football
         </div>
       </div>
     </div>
