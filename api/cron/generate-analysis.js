@@ -1,119 +1,146 @@
-/**
- * 每日 AI 分析生成 Cron Job
- * 台灣時間早上 6 點（UTC 22:00）
- * 使用 aiProvider：自動 Gemini → Groq fallback
- */
-import aiProvider from '../../lib/sources/aiProvider.js';
-import odds       from '../../lib/sources/odds.js';
+// Vercel Cron Job: 每天 UTC 22:00（台灣早上 6 點）自動執行
+// 功能：1. 抓今日賽事 2. AI分析 3. 存 Firestore
+// 用戶端只讀 Firestore，不直接打 API
 
-// 泊松分布
-const poisson = (lambda, k) => { let r = Math.exp(-lambda); for (let i=1;i<=k;i++) r*=lambda/i; return r; };
-const calcPoissonProb = (hL, aL) => {
-  let hw=0, d=0, aw=0;
-  for (let h=0;h<=6;h++) for (let a=0;a<=6;a++) {
-    const p = poisson(hL,h)*poisson(aL,a);
-    if(h>a) hw+=p; else if(h===a) d+=p; else aw+=p;
-  }
-  return { homeWin:+(hw*100).toFixed(1), draw:+(d*100).toFixed(1), awayWin:+(aw*100).toFixed(1) };
+import { initializeApp, getApps } from 'firebase/app';
+import { getFirestore, collection, addDoc, serverTimestamp, getDocs, query, where, orderBy, limit, setDoc, doc } from 'firebase/firestore';
+
+const initFirebase = () => {
+  if (getApps().length > 0) return getApps()[0];
+  return initializeApp({
+    apiKey:            process.env.VITE_FIREBASE_API_KEY,
+    authDomain:        process.env.VITE_FIREBASE_AUTH_DOMAIN,
+    projectId:         process.env.VITE_FIREBASE_PROJECT_ID,
+    storageBucket:     process.env.VITE_FIREBASE_STORAGE_BUCKET,
+    messagingSenderId: process.env.VITE_FIREBASE_MESSAGING_SENDER_ID,
+    appId:             process.env.VITE_FIREBASE_APP_ID,
+  });
 };
 
-// 去水概率
-const noVig = (odds_) => {
-  const i = odds_.map(o=>1/o);
-  const t = i.reduce((s,p)=>s+p,0);
-  return i.map(p=>+(p/t*100).toFixed(1));
+const SPORT_MAP = {
+  'soccer_world_cup':'世界杯','soccer_fifa_world_cup':'世界杯',
+  'basketball_nba':'NBA','baseball_mlb':'MLB',
+  'icehockey_nhl':'NHL','mma_mixed_martial_arts':'UFC',
 };
 
-// EV 計算
-const calcEV = (modelPct, decimal) => +((modelPct/100*decimal-1)*100).toFixed(1);
-const calcEdge = (modelPct, nvPct) => +(modelPct-nvPct).toFixed(1);
-const getDecision = (edge) => edge>=4?'BET':edge>=2?'LEAN':edge<0?'NO_BET':'WAIT';
+const noVig = (h,d,a) => {
+  const arr=[h,d,a].filter(Boolean),imp=arr.map(o=>1/o),tot=imp.reduce((s,p)=>s+p,0);
+  return{h:+(imp[0]/tot*100).toFixed(1),d:d?+(imp[1]/tot*100).toFixed(1):0,a:+(imp[d?2:1]/tot*100).toFixed(1)};
+};
 
-const NARRATIVE_PROMPT = (db) =>
-`你是 SignalEdge 的 Narrative Agent。嚴格規則：
-- 所有數字必須來自 DATA_BLOCK，不得自行創造
-- 不使用「穩」「必中」「保證」「鎖單」
-- Decision=NO_BET 時說明無價值原因
-- 150-200字繁體中文
-
-DATA_BLOCK:
-${JSON.stringify(db, null, 2)}
-
-輸出 JSON：{"headline":"","summary":"","main_risk":"","pre_match_check":"","decision":"${db.ev?.decision}"}`;
+const callGemini = async (prompt) => {
+  const key = process.env.GEMINI_API_KEY;
+  if (!key) return null;
+  
+  // 動態取得可用模型
+  let model = 'gemini-1.5-flash';
+  try {
+    const listR = await fetch(`https://generativelanguage.googleapis.com/v1beta/models?key=${key}`);
+    const listD = await listR.json();
+    const models = (listD.models||[])
+      .filter(m=>(m.supportedGenerationMethods||[]).includes('generateContent'))
+      .map(m=>m.name.replace('models/',''))
+      .filter(m=>/flash|lite/i.test(m));
+    if (models.length > 0) model = models[0];
+  } catch {}
+  
+  const r = await fetch(
+    `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${key}`,
+    { method:'POST', headers:{'Content-Type':'application/json'},
+      body: JSON.stringify({ contents:[{parts:[{text:prompt}]}], generationConfig:{temperature:0.7,maxOutputTokens:500} }) }
+  );
+  const d = await r.json();
+  return d.candidates?.[0]?.content?.parts?.[0]?.text || null;
+};
 
 export default async function handler(req, res) {
-  console.log('[Cron] 每日分析生成開始', new Date().toISOString());
-
-  // 取今日賽事（從 Odds API）
-  let matches = [];
-  try {
-    const r = await odds.getUpcoming({ region:'eu', limit:8 }, process.env);
-    if (r.events?.length) {
-      matches = r.events.slice(0,5).map(ev => {
-        const bm = ev.bookmakers?.[0];
-        const h2h = bm?.markets?.find(m=>m.key==='h2h');
-        const oc = h2h?.outcomes || [];
-        const homeO = oc.find(o=>o.name===ev.home_team)?.price||2;
-        const awayO = oc.find(o=>o.name===ev.away_team)?.price||2;
-        const drawO = oc.find(o=>o.name==='Draw')?.price||null;
-        return { id:ev.id, home:ev.home_team, away:ev.away_team, stage:ev.sport_title, homeO, drawO, awayO };
-      });
+  // Vercel Cron 驗證
+  const authHeader = req.headers.authorization;
+  if (authHeader !== `Bearer ${process.env.CRON_SECRET}` && process.env.NODE_ENV === 'production') {
+    // 允許 admin 手動觸發（無需 CRON_SECRET）
+    if (req.method !== 'POST' || !req.headers['x-admin-trigger']) {
+      return res.status(401).json({ error: 'Unauthorized' });
     }
-  } catch(e) { console.warn('[Cron] Odds API failed:', e.message); }
-
-  // 備用賽事
-  if (!matches.length) {
-    matches = [
-      { id:'wc_sample_1', home:'巴西', away:'摩洛哥', stage:'世界杯', homeO:1.62, drawO:3.90, awayO:4.80 },
-      { id:'wc_sample_2', home:'法國', away:'塞內加爾', stage:'世界杯', homeO:1.75, drawO:3.80, awayO:4.20 },
-    ];
   }
 
   const results = [];
-  for (const match of matches) {
+  
+  try {
+    // 1. 抓今日賽事
+    const oddsR = await fetch(
+      `https://api.the-odds-api.com/v4/sports/upcoming/odds/?regions=eu&markets=h2h&oddsFormat=decimal&apiKey=${process.env.ODDS_API_KEY}&daysFrom=1`
+    );
+    const oddsD = await oddsR.json();
+    const events = (Array.isArray(oddsD) ? oddsD : [])
+      .filter(ev => SPORT_MAP[ev.sport_key])
+      .slice(0, 8); // 每天最多分析 8 場，控制 Gemini 用量
+
+    // 2. 存賽程快取到 Firestore
     try {
-      const oddsArr = [match.homeO, match.drawO, match.awayO].filter(Boolean);
-      const nv = noVig(oddsArr);
-      const [nvH, nvD, nvA] = nv;
+      const app = initFirebase();
+      const db = getFirestore(app);
+      await setDoc(doc(db, 'cache', 'odds'), {
+        events: oddsD,
+        updatedAt: new Date(),
+      });
+    } catch (e) { console.warn('Cache odds failed:', e.message); }
 
-      // 模型概率（用去水概率作為基線，有 lambda 就用泊松）
-      const { homeWin:modelH, draw:modelD, awayWin:modelA } = { homeWin:nvH, draw:nvD||0, awayWin:nvA };
+    // 3. 逐場分析
+    for (const ev of events) {
+      try {
+        const sport = SPORT_MAP[ev.sport_key];
+        const bm = ev.bookmakers?.[0];
+        const h2h = bm?.markets?.find(m => m.key === 'h2h');
+        const oc = h2h?.outcomes || [];
+        const hO = oc.find(o=>o.name===ev.home_team)?.price||2;
+        const aO = oc.find(o=>o.name===ev.away_team)?.price||2;
+        const dO = oc.find(o=>o.name==='Draw')?.price;
+        const nv = noVig(hO, dO, aO);
+        const evPct = +((nv.h/100*hO-1)*100).toFixed(1);
+        const decision = evPct>4?'BET':evPct>2?'LEAN':'WAIT';
 
-      const edge = calcEdge(modelH, nvH);
-      const ev = calcEV(modelH, match.homeO);
-      const decision = getDecision(edge);
+        const prompt = `你是 SignalEdge 的運動數據分析師。
 
-      const dataBlock = {
-        match_info: { home:match.home, away:match.away, stage:match.stage },
-        odds: { home:match.homeO, draw:match.drawO, away:match.awayO, home_no_vig:nvH, draw_no_vig:nvD, away_no_vig:nvA },
-        model: { home_win:modelH, draw:modelD, away_win:modelA },
-        ev: { edge, ev_percent:ev, decision, min_bettable_odds:+(1/((modelH-2)/100)).toFixed(2) },
-        context: { data_completeness:0.8, lineup_confirmed:false },
-      };
+根據以下 DATA_BLOCK 生成賽前分析。嚴格使用數據，不得自行創造數字。
+不使用「穩」「必中」「保證」「鎖單」。150字繁體中文。
 
-      // 使用 aiProvider（自動 Gemini → Groq fallback）
-      const { analysis, provider, model } = await aiProvider.analyze(
-        { prompt: NARRATIVE_PROMPT(dataBlock), type: 'general' },
-        process.env
-      );
+DATA_BLOCK:
+賽事：${ev.home_team} vs ${ev.away_team}（${sport}）
+市場去水：主 ${nv.h}%${dO?` 平 ${nv.d}%`:''} 客 ${nv.a}%
+賠率：主 ${hO.toFixed(2)} 客 ${aO.toFixed(2)}
+EV：${evPct}%  決策：${decision}
 
-      // TODO: 串接 Firestore 後存入
-      // await db.collection('analyses').add({ ...dataBlock, analysis, provider, model, createdAt: new Date() });
+請輸出：主要分析（市場共識、數據重點）+ 主要風險 + 開賽前確認事項。`;
 
-      results.push({ id:match.id, success:true, decision, ev, provider, model });
-      await new Promise(r => setTimeout(r, 800));
-    } catch(e) {
-      results.push({ id:match.id, success:false, error:e.message });
+        const analysis = await callGemini(prompt);
+        
+        // 存分析到 Firestore
+        try {
+          const app = initFirebase();
+          const db = getFirestore(app);
+          await addDoc(collection(db, 'analyses'), {
+            sport, status: 'pending', accessLevel: 'free',
+            home: ev.home_team, away: ev.away_team,
+            homeEn: ev.home_team, awayEn: ev.away_team,
+            modelHome: nv.h, modelDraw: nv.d, modelAway: nv.a,
+            odds: { h: hO, d: dO || null, a: aO },
+            ev: evPct, edge: 0, decision,
+            dataCompleteness: 0.78,
+            analysis: analysis || `市場去水：主 ${nv.h}% 客 ${nv.a}%。EV ${evPct}%，${decision}。`,
+            createdAt: serverTimestamp(),
+            autoGenerated: true,
+          });
+        } catch (e) { console.warn('Save analysis failed:', e.message); }
+
+        results.push({ match: `${ev.home_team} vs ${ev.away_team}`, status: 'ok' });
+        await new Promise(r => setTimeout(r, 800)); // 限速
+      } catch (e) {
+        results.push({ match: ev.id, status: 'error', error: e.message });
+      }
     }
+  } catch (e) {
+    return res.status(500).json({ error: e.message });
   }
 
-  const summary = {
-    generated: results.filter(r=>r.success).length,
-    failed: results.filter(r=>!r.success).length,
-    bets: results.filter(r=>r.decision==='BET').length,
-    providers: [...new Set(results.filter(r=>r.provider).map(r=>r.provider))],
-    results,
-  };
-  console.log('[Cron] 完成', summary);
-  res.json({ success:true, ...summary, time:new Date().toISOString() });
+  res.json({ success: true, generated: results.length, results, time: new Date().toISOString() });
 }
