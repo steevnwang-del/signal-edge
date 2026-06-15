@@ -28,7 +28,12 @@ const DEFAULT_SETTINGS = {
   playerSearchEnabled: false,
 };
 
-const PROTECTED = ['dashboard','signal-detail','agent','community'];
+// 需要登入才能看的頁面
+const PROTECTED = ['dashboard', 'signal-detail', 'agent', 'community'];
+
+// 是否有管理員權限（admin 或 super_admin 都算）
+const hasAdminAccess = (role) => role === 'admin' || role === 'super_admin';
+const hasVIPAccess = (role) => role === 'vip' || role === 'admin' || role === 'super_admin';
 
 export default function App() {
   const [page, setPage]           = useState('landing');
@@ -45,19 +50,24 @@ export default function App() {
     let unsub = () => {};
     (async () => {
       try {
-        // 處理 Google redirect 回來（LINE 瀏覽器用）
+        // 處理 Google redirect 回來（LINE/WebView 用）
         const redirectUser = await handleRedirectResult();
         if (redirectUser) {
           setUser(redirectUser);
-          setRole(await getUserRole(redirectUser.uid));
+          const r = await getUserRole(redirectUser.uid);
+          setRole(r);
           setPage('dashboard');
           setAuthReady(true);
           return;
         }
+
         unsub = onAuth(async (fbUser) => {
           if (fbUser) {
             setUser(fbUser);
-            setRole(await getUserRole(fbUser.uid));
+            const r = await getUserRole(fbUser.uid);
+            setRole(r);
+            // 登入後自動進入 dashboard
+            setPage(prev => (prev === 'landing' || prev === 'login') ? 'dashboard' : prev);
           } else {
             setUser(null);
             setRole('guest');
@@ -74,6 +84,7 @@ export default function App() {
 
   const goPage = (pg) => {
     if (PROTECTED.includes(pg) && !user) { setPage('login'); return; }
+    if (pg === 'admin' && !hasAdminAccess(role)) return; // 非管理員不能進
     setPage(pg);
   };
 
@@ -95,28 +106,45 @@ export default function App() {
   return (
     <div style={{ fontFamily:"-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif", minHeight:'100vh', background:'#ECEEF2' }}>
       {page !== 'login' && (
-        <MainNav page={page} role={role} user={user} setPage={goPage} setRole={setRole} onLogout={handleLogout} siteSettings={siteSettings}/>
+        <MainNav
+          page={page} role={role} user={user}
+          setPage={goPage} setRole={setRole}
+          onLogout={handleLogout} siteSettings={siteSettings}
+        />
       )}
       {page !== 'login' && <SiteMarquee settings={siteSettings}/>}
 
-      {page === 'login'         && <LoginPage setPage={setPage} setRole={setRole}/>}
-      {page === 'landing'       && <LandingPage setPage={goPage} setRole={setRole}/>}
-      {page === 'dashboard'     && <Dashboard role={role} setPage={goPage} setSelectedSignal={setSelectedSignal} signals={liveSignals}/>}
+      {page === 'login'     && <LoginPage setPage={setPage} setRole={setRole}/>}
+      {page === 'landing'   && <LandingPage setPage={goPage} setRole={setRole}/>}
+      {page === 'dashboard' && <Dashboard role={role} setPage={goPage} setSelectedSignal={setSelectedSignal} signals={liveSignals}/>}
       {page === 'signal-detail' && <SignalDetail signal={liveSelected} role={role} setPage={goPage}/>}
-      {page === 'agent'         && <AgentPanel/>}
-      {page === 'admin'         && role==='admin' && <AdminPanel signals={liveSignals} setPreviewRole={setRole} setPage={setPage} siteSettings={siteSettings} setSiteSettings={setSiteSettings}/>}
-      {page === 'players'       && siteSettings.playerSearchEnabled && <PlayerSearch/>}
-      {page === 'players'       && !siteSettings.playerSearchEnabled && (
+      {page === 'agent'     && <AgentPanel/>}
+
+      {/* Admin Panel：admin 和 super_admin 都可以進入 */}
+      {page === 'admin' && hasAdminAccess(role) && (
+        <AdminPanel
+          signals={liveSignals}
+          setPreviewRole={setRole}
+          setPage={setPage}
+          siteSettings={siteSettings}
+          setSiteSettings={setSiteSettings}
+        />
+      )}
+
+      {/* 選手搜尋：由 admin 控制開關 */}
+      {page === 'players' && siteSettings.playerSearchEnabled && <PlayerSearch/>}
+      {page === 'players' && !siteSettings.playerSearchEnabled && (
         <div style={{ textAlign:'center', padding:'80px 20px', color:'#6B7280' }}>
           <div style={{ fontSize:40, marginBottom:16 }}>🔧</div>
           <div style={{ fontSize:16, fontWeight:700, color:'#111827', marginBottom:8 }}>選手搜尋即將開放</div>
           <div style={{ fontSize:13 }}>此功能正在優化中，敬請期待</div>
         </div>
       )}
-      {page === 'teams'         && <TeamAnalysis/>}
-      {page === 'news'          && <NewsPage/>}
-      {page === 'calendar'      && <CalendarPage/>}
-      {page === 'community'     && <CommunityPage/>}
+
+      {page === 'teams'     && <TeamAnalysis role={role}/>}
+      {page === 'news'      && <NewsPage/>}
+      {page === 'calendar'  && <CalendarPage role={role}/>}
+      {page === 'community' && <CommunityPage/>}
 
       <SettlementToast signal={justSettledSignal}/>
     </div>
