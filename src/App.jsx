@@ -28,17 +28,14 @@ const DEFAULT_SETTINGS = {
   playerSearchEnabled: false,
 };
 
-// 需要登入才能看的頁面
 const PROTECTED = ['dashboard', 'signal-detail', 'agent', 'community'];
-
-// 是否有管理員權限（admin 或 super_admin 都算）
 const hasAdminAccess = (role) => role === 'admin' || role === 'super_admin';
-const hasVIPAccess = (role) => role === 'vip' || role === 'admin' || role === 'super_admin';
 
 export default function App() {
-  const [page, setPage]           = useState('landing');
-  const [role, setRole]           = useState('guest');
-  const [user, setUser]           = useState(null);
+  const [page, setPage]         = useState('landing');
+  const [actualRole, setActualRole] = useState('guest'); // 真實角色（來自 Firebase）
+  const [previewRole, setPreviewRole] = useState(null);  // Admin 預覽角色（null = 不預覽）
+  const [user, setUser]         = useState(null);
   const [authReady, setAuthReady] = useState(false);
   const [selectedSignal, setSelectedSignal] = useState(null);
   const [siteSettings, setSiteSettings] = useState(DEFAULT_SETTINGS);
@@ -46,31 +43,34 @@ export default function App() {
   const justSettledSignal = justSettled ? liveSignals.find(s=>s.id===justSettled) : null;
   const liveSelected = selectedSignal ? liveSignals.find(s=>s.id===selectedSignal.id)||selectedSignal : null;
 
+  // 實際顯示的角色：預覽優先，其次是真實角色
+  const role = previewRole || actualRole;
+  const isPreviewMode = !!previewRole;
+
   useEffect(() => {
     let unsub = () => {};
     (async () => {
       try {
-        // 處理 Google redirect 回來（LINE/WebView 用）
         const redirectUser = await handleRedirectResult();
         if (redirectUser) {
           setUser(redirectUser);
           const r = await getUserRole(redirectUser.uid);
-          setRole(r);
+          setActualRole(r);
           setPage('dashboard');
           setAuthReady(true);
           return;
         }
-
         unsub = onAuth(async (fbUser) => {
           if (fbUser) {
             setUser(fbUser);
             const r = await getUserRole(fbUser.uid);
-            setRole(r);
-            // 登入後自動進入 dashboard
+            setActualRole(r);
+            setPreviewRole(null); // 重新登入清除預覽
             setPage(prev => (prev === 'landing' || prev === 'login') ? 'dashboard' : prev);
           } else {
             setUser(null);
-            setRole('guest');
+            setActualRole('guest');
+            setPreviewRole(null);
           }
           setAuthReady(true);
         });
@@ -83,14 +83,24 @@ export default function App() {
   }, []);
 
   const goPage = (pg) => {
+    // 預覽模式下離開 admin 頁面 → 清除預覽
+    if (pg !== 'admin' && isPreviewMode) {
+      setPreviewRole(null);
+    }
     if (PROTECTED.includes(pg) && !user) { setPage('login'); return; }
-    if (pg === 'admin' && !hasAdminAccess(role)) return; // 非管理員不能進
+    if (pg === 'admin' && !hasAdminAccess(actualRole)) return; // 用真實角色判斷
     setPage(pg);
   };
 
   const handleLogout = async () => {
     try { await logout(); } catch {}
-    setUser(null); setRole('guest'); setPage('landing');
+    setUser(null); setActualRole('guest'); setPreviewRole(null); setPage('landing');
+  };
+
+  // Admin 設定預覽角色（不影響真實角色）
+  const handleSetPreviewRole = (newRole) => {
+    if (!hasAdminAccess(actualRole)) return; // 只有真實 admin 能預覽
+    setPreviewRole(newRole === actualRole ? null : newRole);
   };
 
   if (!authReady) {
@@ -105,39 +115,46 @@ export default function App() {
 
   return (
     <div style={{ fontFamily:"-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif", minHeight:'100vh', background:'#ECEEF2' }}>
+      {/* 預覽模式橫幅 */}
+      {isPreviewMode && (
+        <div style={{ background:'#DC2626', color:'#fff', textAlign:'center', padding:'6px', fontSize:12, fontWeight:700, position:'sticky', top:0, zIndex:200 }}>
+          🎭 預覽模式：{role} 視角
+          <button onClick={()=>{setPreviewRole(null);setPage('admin');}} style={{ marginLeft:16, background:'rgba(255,255,255,0.2)', border:'1px solid rgba(255,255,255,0.4)', color:'#fff', padding:'2px 10px', borderRadius:4, cursor:'pointer', fontSize:11 }}>
+            退出預覽
+          </button>
+        </div>
+      )}
+
       {page !== 'login' && (
         <MainNav
           page={page} role={role} user={user}
-          setPage={goPage} setRole={setRole}
+          setPage={goPage} setRole={setActualRole}
           onLogout={handleLogout} siteSettings={siteSettings}
         />
       )}
       {page !== 'login' && <SiteMarquee settings={siteSettings}/>}
 
-      {page === 'login'     && <LoginPage setPage={setPage} setRole={setRole}/>}
-      {page === 'landing'   && <LandingPage setPage={goPage} setRole={setRole}/>}
+      {page === 'login'     && <LoginPage setPage={setPage} setRole={setActualRole}/>}
+      {page === 'landing'   && <LandingPage setPage={goPage} setRole={setActualRole}/>}
       {page === 'dashboard' && <Dashboard role={role} setPage={goPage} setSelectedSignal={setSelectedSignal} signals={liveSignals}/>}
       {page === 'signal-detail' && <SignalDetail signal={liveSelected} role={role} setPage={goPage}/>}
       {page === 'agent'     && <AgentPanel/>}
 
-      {/* Admin Panel：admin 和 super_admin 都可以進入 */}
-      {page === 'admin' && hasAdminAccess(role) && (
+      {page === 'admin' && hasAdminAccess(actualRole) && (
         <AdminPanel
           signals={liveSignals}
-          setPreviewRole={setRole}
+          setPreviewRole={handleSetPreviewRole}   // ← 現在只設預覽，不改真實角色
           setPage={setPage}
           siteSettings={siteSettings}
           setSiteSettings={setSiteSettings}
         />
       )}
 
-      {/* 選手搜尋：由 admin 控制開關 */}
       {page === 'players' && siteSettings.playerSearchEnabled && <PlayerSearch/>}
       {page === 'players' && !siteSettings.playerSearchEnabled && (
         <div style={{ textAlign:'center', padding:'80px 20px', color:'#6B7280' }}>
           <div style={{ fontSize:40, marginBottom:16 }}>🔧</div>
           <div style={{ fontSize:16, fontWeight:700, color:'#111827', marginBottom:8 }}>選手搜尋即將開放</div>
-          <div style={{ fontSize:13 }}>此功能正在優化中，敬請期待</div>
         </div>
       )}
 
