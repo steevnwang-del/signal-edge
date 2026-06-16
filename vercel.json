@@ -3,5 +3,10 @@
   "crons": [
     { "path": "/api/cron/generate-analysis", "schedule": "0 22 * * *" },
     { "path": "/api/cron/refresh-news", "schedule": "0 4 * * *" }
-  ]
+  ],
+  "functions": {
+    "api/cron/generate-analysis.js": {
+      "maxDuration": 60
+    }
+  }
 }
