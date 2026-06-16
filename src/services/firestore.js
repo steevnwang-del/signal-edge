@@ -1,4 +1,4 @@
-import { collection, doc, getDoc, getDocs, setDoc, updateDoc, addDoc, query, where, orderBy, limit as fsLimit, serverTimestamp } from 'firebase/firestore';
+import { collection, doc, getDoc, getDocs, setDoc, updateDoc, addDoc, query, where, orderBy, limit as fsLimit, serverTimestamp, increment } from 'firebase/firestore';
 import { requireDB, isFirebaseReady, getFirebaseInitError } from './firebase.js';
 
 const getDB = () => requireDB();
@@ -54,22 +54,20 @@ export const updateAnalysis = async (id, data) => {
   catch (e) { warn('updateAnalysis', e); return false; }
 };
 
-export const getCachedOdds = async () => {
-  try { const s = await getDoc(doc(getDB(), 'cache', 'odds')); return s.exists() ? s.data() : null; }
-  catch (e) { warn('getCachedOdds', e); return null; }
+export const getCachedOdds = async () => getCacheDoc('odds');
+export const setCachedOdds = async (data) => setCacheDoc('odds', data);
+export const getCachedNews = async () => getCacheDoc('news');
+export const setCachedNews = async (data) => setCacheDoc('news', data);
+
+export const getCacheDoc = async (id) => {
+  try { const s = await getDoc(doc(getDB(), 'cache', id)); return s.exists() ? s.data() : null; }
+  catch (e) { warn(`getCacheDoc:${id}`, e); return null; }
 };
-export const setCachedOdds = async (data) => {
-  try { await setDoc(doc(getDB(), 'cache', 'odds'), { ...data, updatedAt: serverTimestamp() }, { merge: true }); return true; }
-  catch (e) { warn('setCachedOdds', e); return false; }
+export const setCacheDoc = async (id, data) => {
+  try { await setDoc(doc(getDB(), 'cache', id), { ...data, updatedAt: serverTimestamp() }, { merge: true }); return true; }
+  catch (e) { warn(`setCacheDoc:${id}`, e); return false; }
 };
-export const getCachedNews = async () => {
-  try { const s = await getDoc(doc(getDB(), 'cache', 'news')); return s.exists() ? s.data() : null; }
-  catch (e) { warn('getCachedNews', e); return null; }
-};
-export const setCachedNews = async (data) => {
-  try { await setDoc(doc(getDB(), 'cache', 'news'), { ...data, updatedAt: serverTimestamp() }, { merge: true }); return true; }
-  catch (e) { warn('setCachedNews', e); return false; }
-};
+
 export const getSettings = async () => {
   try { const s = await getDoc(doc(getDB(), 'settings', 'site')); return s.exists() ? s.data() : {}; }
   catch (e) { warn('getSettings', e); return {}; }
@@ -77,4 +75,29 @@ export const getSettings = async () => {
 export const saveSettings = async (data) => {
   try { await setDoc(doc(getDB(), 'settings', 'site'), { ...data, updatedAt: serverTimestamp() }, { merge: true }); return true; }
   catch (e) { warn('saveSettings', e); return false; }
+};
+
+export const saveAdPlacements = async (ads = []) => saveSettings({ ads });
+export const getAdPlacements = async () => (await getSettings())?.ads || [];
+
+export const getApiUsage = async ({ period = 'day', limitN = 60 } = {}) => {
+  try {
+    const col = period === 'month' ? 'apiUsageMonthly' : 'apiUsageDaily';
+    const q = query(collection(getDB(), col), orderBy('updatedAt', 'desc'), fsLimit(limitN));
+    const s = await getDocs(q);
+    return s.docs.map(d => ({ id: d.id, ...d.data() }));
+  } catch (e) { warn('getApiUsage', e); return []; }
+};
+
+export const recordClientEvent = async (name, data = {}) => {
+  try {
+    const id = `${new Date().toISOString().slice(0,10)}_${name}`;
+    await setDoc(doc(getDB(), 'clientEventsDaily', id), {
+      event: name,
+      count: increment(1),
+      sample: data,
+      updatedAt: serverTimestamp(),
+    }, { merge: true });
+    return true;
+  } catch (e) { warn('recordClientEvent', e); return false; }
 };

@@ -1,6 +1,6 @@
 import { useState } from 'react';
 const C={navy:'#0F3460',white:'#FFFFFF',dark:'#111827',muted:'#6B7280',border:'#D4D8DF',amber:'#D97706'};
-const roleLabel={guest:'訪客',free:'免費',vip:'VIP',agent:'代理',admin:'管理',super_admin:'超管'};
+const roleLabel={guest:'訪客',free:'免費',vip:'VIP',agent:'推廣夥伴',admin:'管理',super_admin:'超管'};
 const roleColor={guest:C.muted,free:C.muted,vip:'#D97706',agent:'#7C3AED',admin:'#059669',super_admin:'#DC2626'};
 
 export default function MainNav({page,role,user,setPage,onLogout,siteSettings}){
@@ -16,7 +16,6 @@ export default function MainNav({page,role,user,setPage,onLogout,siteSettings}){
     {id:'teams',label:'隊伍',icon:'🏆'},
     {id:'calendar',label:'賽程',icon:'📅'},
     {id:'news',label:'新聞',icon:'📰'},
-    ...(isLoggedIn?[{id:'agent',label:'代理',icon:'🤝'}]:[]),
     ...(siteSettings?.playerSearchEnabled?[{id:'players',label:'選手',icon:'🏅'}]:[]),
   ];
 
@@ -54,6 +53,7 @@ export default function MainNav({page,role,user,setPage,onLogout,siteSettings}){
                     <div style={{marginTop:4,display:'inline-block',fontSize:10,fontWeight:700,color:roleColor[role],background:roleColor[role]+'18',padding:'2px 8px',borderRadius:3}}>{roleLabel[role]}</div>
                   </div>
                   <div style={{padding:'6px 0'}}>
+                    <button onClick={()=>{setPage('agent');setShowProfile(false);}} style={{display:'block',width:'100%',textAlign:'left',padding:'9px 16px',border:'none',cursor:'pointer',background:'transparent',fontSize:13,color:C.dark}} onMouseEnter={e=>e.currentTarget.style.background='#F6F7FA'} onMouseLeave={e=>e.currentTarget.style.background='transparent'}>🎁 邀請好友</button>
                     {isAdmin&&<button onClick={()=>{setPage('admin');setShowProfile(false);}} style={{display:'block',width:'100%',textAlign:'left',padding:'9px 16px',border:'none',cursor:'pointer',background:'transparent',fontSize:13,color:C.dark}} onMouseEnter={e=>e.currentTarget.style.background='#F6F7FA'} onMouseLeave={e=>e.currentTarget.style.background='transparent'}>🔧 管理後台</button>}
                   </div>
                   <div style={{padding:'6px 0',borderTop:`1px solid ${C.border}`}}>

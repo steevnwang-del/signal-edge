@@ -1,5 +1,6 @@
 import { useState, useEffect } from 'react';
 import { onAuth, getUserRole, handleRedirectResult, logout } from './services/auth';
+import { getSettings } from './services/firestore';
 import SiteMarquee from './components/SiteMarquee';
 import SettlementToast from './components/SettlementToast';
 import MainNav from './components/MainNav';
@@ -25,7 +26,14 @@ const DEFAULT_SETTINGS = {
   announcementEnabled: false,
   announcementText: '',
   announcementType: 'info',
-  ads: [],
+  ads: [
+    { id:'home_top', enabled:false, placement:'home_top', title:'世界盃專題贊助', imageUrl:'', linkUrl:'', sponsorName:'', type:'banner', priority:10 },
+  ],
+  adRules: { showDisplayAds:true, rewardedUnlockEnabled:true, rewardedUnlockCount:1 },
+  inviteRewards: { enabled:true, inviterUnlocks:2, inviteeUnlocks:1, rewardDays:1, allGamesThreshold:3, passThreshold:10 },
+  freeLimits: { guestDailyCards:3, freeDailyCards:5, registeredBonusCards:2 },
+  analysisSettings: { enabledSports:['世界杯','MLB','NBA','電競'], minDataCompleteness:0.65, autoGenerateCount:12 },
+  brandSettings: { showTaiwanCalculator:true, showInviteCta:true, showEngineeringCopy:false },
   playerSearchEnabled: false,
   plans: {
     monthly:   { name:'月費方案', price:299, usd:9,  period:'/ 月',    desc:'每月自動續費，隨時取消', enabled:true },
@@ -51,6 +59,29 @@ export default function App() {
 
   const role = previewRole || actualRole;
   const isPreviewMode = !!previewRole;
+
+
+  useEffect(() => {
+    try {
+      const m = window.location.pathname.match(/^\/invite\/([^/]+)/);
+      if (m?.[1]) {
+        localStorage.setItem('signalEdgeInviteCode', decodeURIComponent(m[1]));
+        setPage('login');
+      }
+    } catch {}
+  }, []);
+
+  useEffect(() => {
+    (async () => {
+      try {
+        const remote = await getSettings();
+        if (remote && Object.keys(remote).length) {
+          setSiteSettings(prev => ({ ...prev, ...remote, plans: { ...(prev.plans || {}), ...(remote.plans || {}) } }));
+        }
+      } catch (e) { console.warn('[App] load settings skipped:', e.message); }
+    })();
+  }, []);
+
 
   useEffect(() => {
     let unsub = () => {};
@@ -115,10 +146,10 @@ export default function App() {
       {page!=='login'&&<SiteMarquee settings={siteSettings}/>}
 
       {page==='login'   &&<LoginPage setPage={setPage} setRole={setActualRole}/>}
-      {page==='landing' &&<LandingPage setPage={goPage} setRole={setActualRole}/>}
+      {page==='landing' &&<LandingPage setPage={goPage} setRole={setActualRole} siteSettings={siteSettings}/>}
       {page==='dashboard'&&<Dashboard role={role} setPage={goPage} setSelectedSignal={setSelectedSignal} signals={liveSignals}/>}
       {page==='signal-detail'&&<SignalDetail signal={liveSelected} role={role} setPage={goPage}/>}
-      {page==='agent'   &&<AgentPanel/>}
+      {page==='agent'   &&<AgentPanel user={user} siteSettings={siteSettings}/>}
       {page==='upgrade' &&<UpgradePage user={user} role={role} setPage={goPage} plans={siteSettings.plans}/>}
 
       {page==='admin'&&hasAdminAccess(actualRole)&&(
@@ -134,7 +165,7 @@ export default function App() {
         </div>
       )}
       {page==='teams'    &&<TeamAnalysis role={role}/>}
-      {page==='news'     &&<NewsPage/>}
+      {page==='news'     &&<NewsPage role={role}/>}
       {page==='calendar' &&<CalendarPage role={role}/>}
       {page==='community'&&<CommunityPage/>}
 

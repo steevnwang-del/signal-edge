@@ -1,4 +1,5 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
+import { getSettings, saveSettings } from '../../services/firestore';
 
 const C = { navy:'#0F3460', white:'#FFFFFF', dark:'#111827', muted:'#6B7280', border:'#D4D8DF', borderLight:'#E9EBF0', bg:'#F6F7FA', amber:'#D97706', win:'#059669', loss:'#DC2626' };
 const inputStyle = { background:C.bg, border:`1px solid ${C.border}`, borderRadius:6, padding:'8px 12px', fontSize:12, color:C.dark, outline:'none', width:'100%', boxSizing:'border-box', fontFamily:'ui-monospace,monospace', lineHeight:1.6 };
@@ -162,6 +163,33 @@ export default function PromptSettings() {
   const [testResult, setTestResult] = useState('');
   const [saved, setSaved] = useState(false);
 
+
+  useEffect(() => {
+    (async () => {
+      try {
+        const settings = await getSettings();
+        if (settings?.promptTemplates) {
+          setPrompts(prev => {
+            const next = { ...prev };
+            Object.entries(settings.promptTemplates || {}).forEach(([key, template]) => {
+              if (next[key]) next[key] = { ...next[key], template };
+            });
+            return next;
+          });
+        }
+      } catch (e) { console.warn('[PromptSettings] load skipped:', e.message); }
+    })();
+  }, []);
+
+  const saveAllPrompts = async () => {
+    const promptTemplates = Object.fromEntries(Object.entries(prompts).map(([key, val]) => [key, val.template]));
+    const promptMeta = { updatedAt: new Date().toISOString(), version: `prompt-${Date.now()}` };
+    const ok = await saveSettings({ promptTemplates, promptMeta });
+    setSaved(true);
+    setTimeout(()=>setSaved(false),2000);
+    if (!ok) alert('⚠️ 前端已暫存，但 Firestore 儲存失敗，請確認 rules / owner 權限。');
+  };
+
   const current = prompts[active];
 
   const testPrompt = async () => {
@@ -199,7 +227,7 @@ export default function PromptSettings() {
     <div>
       <div style={{ background:'#EFF6FF', border:'1px solid #BFDBFE', borderRadius:8, padding:'10px 14px', marginBottom:16, fontSize:12, color:C.navy, lineHeight:1.7 }}>
         <strong>Prompt 設計原則（來自 GPT 建議）：</strong><br/>
-        Gemini 只負責文字敘述，不負責計算 EV 或勝率 → 所有數字由後端計算完後填入 DATA_BLOCK → Gemini 只解釋這些數字
+        後台儲存後，cron / Admin 產生分析會讀取 settings/site.promptTemplates。Gemini/Groq 只負責文字敘述，不負責計算 EV 或勝率。
       </div>
 
       <div style={{ display:'grid', gridTemplateColumns:'220px 1fr', gap:16 }}>
@@ -245,9 +273,9 @@ export default function PromptSettings() {
                 style={{ background:testing?C.muted:C.navy, color:'#fff', border:'none', padding:'9px 18px', borderRadius:6, cursor:'pointer', fontSize:13, fontWeight:700, opacity:testing||active==='system'?0.7:1 }}>
                 {testing ? '⏳ 測試中...' : '🧪 測試（使用Mock數據）'}
               </button>
-              <button onClick={()=>{ setSaved(true); setTimeout(()=>setSaved(false),2000); }}
+              <button onClick={saveAllPrompts}
                 style={{ background:saved?C.win:C.amber, color:'#fff', border:'none', padding:'9px 18px', borderRadius:6, cursor:'pointer', fontSize:13, fontWeight:700 }}>
-                {saved ? '✓ 已儲存' : '💾 儲存'}
+                {saved ? '✓ 已儲存到 Firestore' : '💾 儲存全部 Prompt'}
               </button>
               <button onClick={()=>setPrompts(p=>({...p,[active]:{...p[active],template:PROMPTS[active].template}}))}
                 style={{ background:'transparent', border:`1px solid ${C.border}`, color:C.muted, padding:'9px 14px', borderRadius:6, cursor:'pointer', fontSize:12 }}>
@@ -268,8 +296,8 @@ export default function PromptSettings() {
           {/* 數據流說明 */}
           <div style={{ marginTop:14, background:'#FFFBEB', border:'1px solid #FDE68A', borderRadius:8, padding:'12px 16px', fontSize:12, color:'#92400E', lineHeight:1.7 }}>
             <strong>正確的數據流（GPT 建議架構）：</strong><br/>
-            後端計算（EV/Edge/No-vig）→ 填入 DATA_BLOCK → 丟給 Gemini → Gemini 只生成敘述文字<br/>
-            <strong>Gemini 永遠不計算數字，只解釋數字。</strong>
+            後端計算（EV/Edge/No-vig）→ 填入 DATA_BLOCK → 套用 Firestore Prompt → 丟給 Gemini/Groq → 產生成品分析<br/>
+            <strong>前台只讀已產生的分析結果，不應每次開頁都呼叫 AI。</strong>
           </div>
         </div>
       </div>

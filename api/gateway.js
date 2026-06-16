@@ -1,13 +1,11 @@
 /**
  * SIGNALEDGE API Gateway
- * 唯一 serverless 入口，所有 source 放 lib/（不計入 Vercel function 上限）
- *
- * 新增：
- * - source: 'groq'        → lib/sources/groq.js
- * - source: 'aiProvider'  → lib/sources/aiProvider.js (自動 fallback)
- * 維持向後相容：
- * - source: 'gemini' 仍然有效，但內部已支援動態模型
+ * Server-side proxy for external APIs and AI providers.
+ * V6A: records daily/monthly usage counters when Firebase Admin is configured.
  */
+
+import { getAdminDB, adminTimestamp } from '../lib/server/firebaseAdmin.js';
+import { FieldValue } from 'firebase-admin/firestore';
 
 const SOURCES = {
   gemini:     () => import('../lib/sources/gemini.js'),
@@ -21,8 +19,44 @@ const SOURCES = {
   news:       () => import('../lib/sources/news.js'),
   polymarket: () => import('../lib/sources/polymarket.js'),
   apisports:  () => import('../lib/sources/apisports.js'),
-  // ← 未來新增只加這一行
 };
+
+const dateKey = () => new Date().toISOString().slice(0, 10);
+const monthKey = () => new Date().toISOString().slice(0, 7);
+const safeId = (s) => String(s || 'unknown').replace(/[^a-zA-Z0-9_-]/g, '_');
+
+async function recordUsage({ source, action, ok = true, error = null, durationMs = 0 }) {
+  try {
+    const db = getAdminDB(process.env);
+    if (!db) return;
+    const base = {
+      source,
+      action,
+      updatedAt: adminTimestamp(),
+      lastDurationMs: durationMs,
+      lastStatus: ok ? 'ok' : 'error',
+      ...(error ? { lastError: String(error).slice(0, 300) } : {}),
+    };
+    const dayId = `${dateKey()}_${safeId(source)}_${safeId(action)}`;
+    const monthId = `${monthKey()}_${safeId(source)}_${safeId(action)}`;
+    await Promise.all([
+      db.collection('apiUsageDaily').doc(dayId).set({
+        ...base,
+        date: dateKey(),
+        count: FieldValue.increment(1),
+        errorCount: ok ? FieldValue.increment(0) : FieldValue.increment(1),
+      }, { merge: true }),
+      db.collection('apiUsageMonthly').doc(monthId).set({
+        ...base,
+        month: monthKey(),
+        count: FieldValue.increment(1),
+        errorCount: ok ? FieldValue.increment(0) : FieldValue.increment(1),
+      }, { merge: true }),
+    ]);
+  } catch (e) {
+    console.warn('[Gateway] usage log skipped:', e.message);
+  }
+}
 
 export default async function handler(req, res) {
   res.setHeader('Access-Control-Allow-Origin', '*');
@@ -30,17 +64,17 @@ export default async function handler(req, res) {
   if (req.method === 'OPTIONS') return res.status(200).end();
 
   if (req.method === 'GET') {
-    return res.json({ status: 'ok', sources: Object.keys(SOURCES), version: '2.2.0' });
+    return res.json({ status: 'ok', sources: Object.keys(SOURCES), version: '6A' });
   }
 
   if (req.method !== 'POST') return res.status(405).json({ error: 'Method not allowed' });
 
+  const started = Date.now();
   const { source, action, params = {} } = req.body || {};
 
   if (!source || !action) {
     return res.status(400).json({ error: 'Missing source or action', example: { source: 'aiProvider', action: 'diagnose', params: {} } });
   }
-
   if (!SOURCES[source]) {
     return res.status(404).json({ error: `Unknown source: ${source}`, available: Object.keys(SOURCES) });
   }
@@ -49,12 +83,15 @@ export default async function handler(req, res) {
     const mod = await SOURCES[source]();
     const h = mod.default || mod;
     if (!h[action]) {
+      await recordUsage({ source, action, ok: false, error: 'Unknown action', durationMs: Date.now() - started });
       return res.status(404).json({ error: `Unknown action: ${action} for source: ${source}`, available: Object.keys(h) });
     }
     const result = await h[action](params, process.env);
+    await recordUsage({ source, action, ok: true, durationMs: Date.now() - started });
     res.json({ success: true, source, action, result, ts: Date.now() });
   } catch (err) {
     console.error(`[Gateway] ${source}.${action}:`, err.message);
+    await recordUsage({ source, action, ok: false, error: err.message, durationMs: Date.now() - started });
     res.status(500).json({
       success: false, source, action,
       error: err.message,

@@ -79,15 +79,15 @@ export default function NewsPage({ role }){
     }catch(e){setNotice('更新新聞快取失敗：'+e.message);}finally{setRefreshing(false);}
   };
 
-  useEffect(()=>{(async()=>{setLoading(true);const ok=await loadCache();if(!ok){setNews(FALLBACK_NEWS);setNotice('新聞快取尚未建立，先顯示重點摘要；系統會在背景更新。');refreshLive({silent:true});}else{refreshLive({silent:true});}setLoading(false);})();},[]);
+  useEffect(()=>{(async()=>{setLoading(true);const ok=await loadCache();if(!ok){setNews(FALLBACK_NEWS);setNotice('新聞快取尚未建立，先顯示重點摘要；請由管理後台更新新聞快取。');}setLoading(false);})();},[]);
 
   const sports=useMemo(()=>['全部',...Array.from(new Set(news.map(n=>n.sport).filter(Boolean)))],[news]);
   const filtered=news.filter(n=>filter==='全部'||n.sport===filter);
 
   return <div style={{background:C.bg,minHeight:'100vh'}}><div style={{maxWidth:1000,margin:'0 auto',padding:'28px 20px'}}>
     <div style={{marginBottom:22,display:'flex',justifyContent:'space-between',alignItems:'flex-end',gap:12,flexWrap:'wrap'}}>
-      <div><div style={{fontSize:11,fontWeight:700,letterSpacing:1.5,color:C.amber,marginBottom:6,textTransform:'uppercase'}}>即時新聞</div><h2 style={{fontSize:26,fontWeight:900,color:C.dark,margin:'0 0 4px'}}>國際媒體速報</h2><p style={{color:C.muted,fontSize:13,margin:0}}>每日快取主要體育媒體重點新聞，點擊可開啟原文。</p></div>
-      <div style={{display:'flex',gap:8}}><button onClick={()=>refreshLive()} disabled={refreshing} style={{padding:'8px 12px',border:`1px solid ${C.border}`,borderRadius:7,background:C.white,cursor:'pointer',fontWeight:700,color:C.navy,fontSize:12}}>{refreshing?'更新中...':'重新整理'}</button>{isAdmin&&<button onClick={adminRefreshCache} disabled={refreshing} style={{padding:'8px 12px',border:'none',borderRadius:7,background:C.navy,color:C.white,cursor:'pointer',fontWeight:700,fontSize:12}}>更新快取</button>}</div>
+      <div><div style={{fontSize:11,fontWeight:700,letterSpacing:1.5,color:C.amber,marginBottom:6,textTransform:'uppercase'}}>即時新聞</div><h2 style={{fontSize:26,fontWeight:900,color:C.dark,margin:'0 0 4px'}}>國際媒體速報</h2><p style={{color:C.muted,fontSize:13,margin:0}}>每日整理主要體育媒體重點新聞，點擊可開啟原文。</p></div>
+      <div style={{display:'flex',gap:8}}><button onClick={loadCache} disabled={refreshing} style={{padding:'8px 12px',border:`1px solid ${C.border}`,borderRadius:7,background:C.white,cursor:'pointer',fontWeight:700,color:C.navy,fontSize:12}}>重新整理</button>{isAdmin&&<button onClick={adminRefreshCache} disabled={refreshing} style={{padding:'8px 12px',border:'none',borderRadius:7,background:C.navy,color:C.white,cursor:'pointer',fontWeight:700,fontSize:12}}>更新快取</button>}</div>
     </div>
     {sports.length>1&&<div style={{overflowX:'auto',marginBottom:16}}><div style={{display:'flex',border:`1px solid ${C.border}`,borderRadius:8,overflow:'hidden',background:C.white,width:'max-content'}}>{sports.map(s=><button key={s} onClick={()=>setFilter(s)} style={{padding:'7px 16px',border:'none',cursor:'pointer',background:filter===s?C.navy:'transparent',color:filter===s?C.white:C.muted,fontSize:12,fontWeight:700,borderRight:`1px solid ${C.borderLight}`,whiteSpace:'nowrap'}}>{s}</button>)}</div></div>}
     {notice&&<div style={{background:'#EFF6FF',border:'1px solid #BFDBFE',borderRadius:8,padding:'10px 12px',color:C.navy,fontSize:12,marginBottom:14}}>{notice}</div>}

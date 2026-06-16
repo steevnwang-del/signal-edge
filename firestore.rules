@@ -56,6 +56,22 @@ service cloud.firestore {
       allow write: if isOwner();
     }
 
+
+    match /apiUsageDaily/{id} {
+      allow read: if isAdmin();
+      allow write: if false;
+    }
+
+    match /apiUsageMonthly/{id} {
+      allow read: if isAdmin();
+      allow write: if false;
+    }
+
+    match /jobs/{id} {
+      allow read: if isAdmin();
+      allow write: if false;
+    }
+
     match /commissions/{id} {
       allow read: if isAdmin();
       allow create, update, delete: if isOwner();

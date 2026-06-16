@@ -28,11 +28,13 @@ export const isLineBrowser=()=>typeof navigator!=='undefined'&&/Line\//i.test(na
 const upsertUser=async(user,extra={})=>{
   if(!_db||!user)return;
   try{
+    const pendingInviteCode = typeof window !== 'undefined' ? localStorage.getItem('signalEdgeInviteCode') : null;
     const ref=doc(_db,'users',user.uid), snap=await getDoc(ref);
     const email=user.email||'';
     const role=isOwner(email)?ROLES.SUPER_ADMIN:(extra.role||ROLES.FREE);
     if(!snap.exists()){
-      await setDoc(ref,{uid:user.uid,email,displayName:user.displayName||extra.displayName||'',role,isOwner:isOwner(email),consent:false,source:extra.source||'email',createdAt:serverTimestamp(),lastLoginAt:serverTimestamp()});
+      await setDoc(ref,{uid:user.uid,email,displayName:user.displayName||extra.displayName||'',role,isOwner:isOwner(email),consent:false,source:extra.source||'email',invitedBy:pendingInviteCode||null,inviteRewardGranted:!!pendingInviteCode,createdAt:serverTimestamp(),lastLoginAt:serverTimestamp()});
+      if (pendingInviteCode && typeof window !== 'undefined') localStorage.removeItem('signalEdgeInviteCode');
     }else{
       const upd={lastLoginAt:serverTimestamp()};
       if(isOwner(email)){upd.role=ROLES.SUPER_ADMIN;upd.isOwner=true;}
