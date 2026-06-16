@@ -22,6 +22,7 @@ export default function LoginPage({setPage,setRole}){
 
   // 處理 LINE 登入回調
   useEffect(()=>{
+    (async()=>{
     const params=new URLSearchParams(window.location.search);
     // Handle Firebase custom token from LINE (best case)
     const lineCustomToken=params.get('line_token');
@@ -97,6 +98,7 @@ export default function LoginPage({setPage,setRole}){
       }catch{setErr('LINE 登入解析失敗');}
       window.history.replaceState({},'',window.location.pathname);
     }
+    })();
   },[]);
 
   const goLine=()=>{
