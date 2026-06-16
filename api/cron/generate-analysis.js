@@ -6,6 +6,19 @@ import { getAdminDB, getAdminInitStatus, adminTimestamp } from '../../lib/server
 import { buildAnalysisFromOddsEvent, buildPromptFromDataBlock, fallbackNarrative, SPORT_MAP } from '../../lib/core/analysisBuilder.js';
 import { taipeiWindow, taipeiDateKey } from '../../lib/core/timeBuckets.js';
 
+
+const removeUndefined = (obj) => {
+  if (Array.isArray(obj)) return obj.map(removeUndefined);
+  if (obj !== null && typeof obj === 'object') {
+    return Object.fromEntries(
+      Object.entries(obj)
+        .filter(([, v]) => v !== undefined)
+        .map(([k, v]) => [k, removeUndefined(v)])
+    );
+  }
+  return obj;
+};
+
 const getWritableDB = () => {
   const adminDb = getAdminDB(process.env);
   if (adminDb) return { type: 'admin', db: adminDb, adminStatus: getAdminInitStatus(process.env) };
@@ -150,11 +163,13 @@ export default async function handler(req, res) {
     for (const r of results.filter(x => x.status === 'ok')) generatedMap.set(r.id, true);
     const dashboardItems = normalized.map(item => ({
       ...item,
-      analysis: generatedMap.has(item.id) ? undefined : fallbackNarrative(item),
+      analysis: generatedMap.has(item.id) ? null : fallbackNarrative(item),
       aiStatus: generatedMap.has(item.id) ? 'done' : 'model_only',
     }));
     const sections = buildSections(dashboardItems);
 
+    const cleanSections = removeUndefined(sections);
+    const cleanItems = removeUndefined([...sections.today, ...sections.future].slice(0, 80));
     await writeCache(dbCtx, 'todayDashboard', {
       dateKey: taipeiDateKey(now),
       window: { start: windowTW.start.toISOString(), end: windowTW.end.toISOString(), timezone: 'Asia/Taipei' },
@@ -162,8 +177,8 @@ export default async function handler(req, res) {
       sourceCoverage: { odds: true, football: false, nba: false, mlb: false, esports: false },
       modelVersion: 'v6b-1-market-poisson-mvp',
       oddsUsage: odds.usage,
-      sections,
-      items: [...sections.today, ...sections.future].slice(0, 80),
+      sections: cleanSections,
+      items: cleanItems,
       generatedAt: now.toISOString(),
       note: '今日賽事只包含台灣時間今日至隔日凌晨 04:00；未來賽事與舊資料不混入今日。',
     });
