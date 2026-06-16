@@ -40,9 +40,13 @@ export default function LoginPage({setPage,setRole}){
           try{
             const pendingCode=localStorage.getItem('signalEdgeInviteCode');
             if(pendingCode&&data.lineUid){
-              const fs=await import('../services/firestore.js');
-              await fs.recordInvite?.({inviteCode:pendingCode,inviteeUid:data.lineUid,inviteeEmail:'',rules:{}});
-              localStorage.removeItem('signalEdgeInviteCode');
+              (async()=>{
+                try{
+                  const fs=await import('../services/firestore.js');
+                  await fs.recordInvite?.({inviteCode:pendingCode,inviteeUid:data.lineUid,inviteeEmail:'',rules:{}});
+                  localStorage.removeItem('signalEdgeInviteCode');
+                }catch{}
+              })();
             }
           }catch{}
           setRole('free');
@@ -174,4 +178,3 @@ export default function LoginPage({setPage,setRole}){
     </div>
   );
 }
-
