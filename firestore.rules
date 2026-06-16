@@ -99,6 +99,12 @@ service cloud.firestore {
       allow write: if signedIn();
     }
 
+    // Stripe 付款紀錄（只有 Admin 可讀，只有 server 可寫）
+    match /payments/{id} {
+      allow read: if isAdmin();
+      allow write: if false; // 只允許 server-side Firebase Admin 寫入
+    }
+
     match /{document=**} {
       allow read, write: if false;
     }
