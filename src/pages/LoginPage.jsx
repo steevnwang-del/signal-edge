@@ -23,6 +23,48 @@ export default function LoginPage({setPage,setRole}){
   // 處理 LINE 登入回調
   useEffect(()=>{
     const params=new URLSearchParams(window.location.search);
+    // Handle Firebase custom token from LINE (best case)
+    const lineCustomToken=params.get('line_token');
+    const lineUid=params.get('line_uid');
+    const lineName=params.get('line_name');
+    if(lineCustomToken&&lineUid){
+      try{
+        const{getAuth,signInWithCustomToken:swct}=await import('firebase/auth');
+        const auth=getAuth();
+        const cred=await swct(auth,lineCustomToken);
+        // Update display name
+        if(lineName&&cred.user){
+          const{updateProfile}=await import('firebase/auth');
+          await updateProfile(cred.user,{displayName:decodeURIComponent(lineName)}).catch(()=>{});
+        }
+        // Record invite if pending
+        try{
+          const pendingCode=localStorage.getItem('signalEdgeInviteCode');
+          if(pendingCode&&cred.user?.uid){
+            const fs=await import('../services/firestore.js');
+            const r=await fs.recordInvite?.({inviteCode:pendingCode,inviteeUid:cred.user.uid,inviteeEmail:'',rules:{}});
+            if(r?.success)localStorage.removeItem('signalEdgeInviteCode');
+          }
+        }catch{}
+        setRole('free');setPage('dashboard');
+        return;
+      }catch(e){console.warn('[LINE] custom token sign-in failed:',e.message);}
+    }
+
+    // Handle line_session fallback (no Admin SDK)
+    const lineSession=params.get('line_session');
+    if(lineSession&&!lineCustomToken){
+      try{
+        const data=JSON.parse(atob(lineSession));
+        if(data.lineUid&&data.exp&&Date.now()<data.exp){
+          // Store session in localStorage for persistence
+          localStorage.setItem('lineSession',lineSession);
+          setRole('free');setPage('dashboard');
+          return;
+        }
+      }catch(e){console.warn('[LINE] session parse failed:',e.message);}
+    }
+
     const lineToken=params.get('line_token');
     const lineError=params.get('line_error');
 
@@ -178,3 +220,4 @@ export default function LoginPage({setPage,setRole}){
     </div>
   );
 }
+
