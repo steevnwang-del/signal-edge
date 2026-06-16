@@ -138,9 +138,15 @@ export default async function handler(req, res) {
       .slice(0, autoCount)
       .sort(sortForDashboard);
 
+    // Only call AI for today's matches to avoid Vercel timeout
+    // Future matches use fallback narrative (still complete data)
+    const AI_LIMIT = 8;
+    let aiCallCount = 0;
     for (const item of toGenerate) {
       try {
-        const analysis = await getAIAnalysis(item.dataBlock, siteSettings);
+        const shouldCallAI = item.bucket === 'today' && aiCallCount < AI_LIMIT;
+        const analysis = shouldCallAI ? await getAIAnalysis(item.dataBlock, siteSettings) : null;
+        if (shouldCallAI) aiCallCount++;
         const docData = {
           ...item,
           analysis: analysis || fallbackNarrative(item),
@@ -153,7 +159,7 @@ export default async function handler(req, res) {
         };
         await writeAnalysis(dbCtx, item.id, docData);
         results.push({ id: item.id, match: `${item.home} vs ${item.away}`, sport: item.sport, bucket: item.bucket, decision: item.decision, status: 'ok' });
-        await new Promise(r => setTimeout(r, 450));
+        if (item.bucket === 'today') await new Promise(r => setTimeout(r, 200));
       } catch (e) {
         results.push({ id: item.id, match: `${item.home} vs ${item.away}`, status: 'error', error: e.message });
       }
@@ -201,3 +207,4 @@ export default async function handler(req, res) {
     res.status(500).json({ success: false, error: e.message, firestore: dbCtx?.type || 'none', adminStatus: getAdminInitStatus(process.env), results });
   }
 }
+
