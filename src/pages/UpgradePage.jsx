@@ -66,6 +66,19 @@ export default function UpgradePage({user,role,setPage}){
           <p style={{color:C.muted,fontSize:15,margin:0}}>EV 分析 · 最低可參考賠率 · 決策條件 · 盤口移動追蹤</p>
         </div>
 
+        {/* 免費升級入口 */}
+        <div style={{background:'linear-gradient(135deg,#ECFDF5,#D1FAE5)',border:'2px solid #6EE7B7',borderRadius:14,padding:'20px 24px',marginBottom:28,display:'flex',justifyContent:'space-between',alignItems:'center',flexWrap:'wrap',gap:16}}>
+          <div>
+            <div style={{fontSize:13,fontWeight:900,color:'#065F46',marginBottom:4}}>🎁 不想付費？邀請好友免費解鎖！</div>
+            <div style={{fontSize:13,color:'#047857',lineHeight:1.6}}>每成功邀請 1 位朋友加入，雙方各獲得今日進階分析解鎖額度。邀請滿 3 人可解鎖今日全場。</div>
+          </div>
+          <div style={{display:'flex',gap:10,flexWrap:'wrap'}}>
+            <button onClick={()=>setPage?.('agent')} style={{background:'#059669',color:'#fff',border:'none',padding:'10px 22px',borderRadius:8,cursor:'pointer',fontSize:13,fontWeight:900,whiteSpace:'nowrap'}}>
+              免費邀請解鎖 →
+            </button>
+          </div>
+        </div>
+
         {/* 方案選擇 */}
         <div style={{display:'grid',gridTemplateColumns:'repeat(auto-fit,minmax(200px,1fr))',gap:12,marginBottom:32}}>
           {PLANS.map(p=>(
@@ -183,3 +196,4 @@ export default function UpgradePage({user,role,setPage}){
     </div>
   );
 }
+
