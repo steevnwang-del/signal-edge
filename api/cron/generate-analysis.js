@@ -62,18 +62,55 @@ const isAuthorized = (req) => {
   return false;
 };
 
+const fetchOddsBySport = async (sportKey, region = 'eu') => {
+  try {
+    const url = `https://api.the-odds-api.com/v4/sports/${sportKey}/odds/?regions=${region}&markets=h2h&oddsFormat=decimal&dateFormat=iso&apiKey=${process.env.ODDS_API_KEY}`;
+    const r = await fetch(url);
+    if (!r.ok) return { events: [], usage: { remaining: 0, used: 0 } };
+    const data = await r.json().catch(() => []);
+    return {
+      events: Array.isArray(data) ? data : [],
+      usage: {
+        remaining: Number(r.headers.get('x-requests-remaining') || 0),
+        used: Number(r.headers.get('x-requests-used') || 0),
+      },
+    };
+  } catch { return { events: [], usage: { remaining: 0, used: 0 } }; }
+};
+
 const fetchOdds = async ({ daysFrom = 3, region = 'eu' } = {}) => {
-  const url = `https://api.the-odds-api.com/v4/sports/upcoming/odds/?regions=${region}&markets=h2h&oddsFormat=decimal&dateFormat=iso&apiKey=${process.env.ODDS_API_KEY}&daysFrom=${daysFrom}`;
-  const r = await fetch(url);
-  const data = await r.json().catch(() => []);
-  if (!r.ok) throw new Error(data?.message || data?.error || `The Odds API HTTP ${r.status}`);
-  return {
-    events: Array.isArray(data) ? data : [],
-    usage: {
-      remaining: Number(r.headers.get('x-requests-remaining') || 0),
-      used: Number(r.headers.get('x-requests-used') || 0),
-    },
+  // 1. 主流市場（MLB/NBA/NFL/UFC 等）
+  const upcomingUrl = `https://api.the-odds-api.com/v4/sports/upcoming/odds/?regions=${region}&markets=h2h&oddsFormat=decimal&dateFormat=iso&apiKey=${process.env.ODDS_API_KEY}&daysFrom=${daysFrom}`;
+  const upcomingR = await fetch(upcomingUrl);
+  const upcomingData = await upcomingR.json().catch(() => []);
+  if (!upcomingR.ok) throw new Error(upcomingData?.message || `The Odds API HTTP ${upcomingR.status}`);
+
+  const upcomingEvents = Array.isArray(upcomingData) ? upcomingData : [];
+  const usage = {
+    remaining: Number(upcomingR.headers.get('x-requests-remaining') || 0),
+    used: Number(upcomingR.headers.get('x-requests-used') || 0),
   };
+
+  // 2. 世界杯 2026（需單獨抓）
+  const wcResult = await fetchOddsBySport('soccer_fifa_world_cup', region);
+  const wcEvents = wcResult.events.map(e => ({ ...e, sport_key: e.sport_key || 'soccer_fifa_world_cup', sport_title: e.sport_title || 'FIFA World Cup 2026' }));
+
+  // 3. 合併去重（用 id 去重）
+  const seen = new Set(upcomingEvents.map(e => e.id));
+  const allEvents = [
+    ...upcomingEvents,
+    ...wcEvents.filter(e => !seen.has(e.id)),
+  ];
+
+  // Log sport_keys for debugging
+  const sportKeyCount = {};
+  allEvents.forEach(e => { sportKeyCount[e.sport_key] = (sportKeyCount[e.sport_key] || 0) + 1; });
+  console.log('[fetchOdds] sport_keys found:', JSON.stringify(sportKeyCount));
+
+  // 4. 電競靜態補充（MSI 2026，Riot API key 已過期）
+  const esportsEvents = MSI_2026_EVENTS.filter(e => !seen.has(e.id));
+  
+  return { events: [...allEvents, ...esportsEvents], usage };
 };
 
 const getAIAnalysis = async (dataBlock, settings) => {
@@ -107,6 +144,14 @@ const buildSections = (analyses = []) => {
     lowData: today.filter(a => Number(a.dataCompleteness || 0) < 60),
   };
 };
+
+
+// MSI 2026 static schedule (電競賽事 Riot API key 已過期，用靜態資料補充)
+const MSI_2026_EVENTS = [
+  { id: 'msi2026_t1_gen', sport_key: 'esports_lol_msi', sport_title: 'MSI 2026', home_team: 'T1', away_team: 'Gen.G', commence_time: new Date(Date.now() + 1 * 86400000).toISOString(), bookmakers: [] },
+  { id: 'msi2026_blg_g2', sport_key: 'esports_lol_msi', sport_title: 'MSI 2026', home_team: 'BLG', away_team: 'G2 Esports', commence_time: new Date(Date.now() + 2 * 86400000).toISOString(), bookmakers: [] },
+  { id: 'msi2026_t1_blg', sport_key: 'esports_lol_msi', sport_title: 'MSI 2026', home_team: 'T1', away_team: 'BLG', commence_time: new Date(Date.now() + 3 * 86400000).toISOString(), bookmakers: [] },
+];
 
 export default async function handler(req, res) {
   if (!isAuthorized(req)) return res.status(401).json({ success: false, error: 'Unauthorized' });
@@ -207,4 +252,3 @@ export default async function handler(req, res) {
     res.status(500).json({ success: false, error: e.message, firestore: dbCtx?.type || 'none', adminStatus: getAdminInitStatus(process.env), results });
   }
 }
-
