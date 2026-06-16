@@ -58,6 +58,9 @@ export const getCachedOdds = async () => getCacheDoc('odds');
 export const setCachedOdds = async (data) => setCacheDoc('odds', data);
 export const getCachedNews = async () => getCacheDoc('news');
 export const setCachedNews = async (data) => setCacheDoc('news', data);
+export const getTodayDashboard = async () => getCacheDoc('todayDashboard');
+export const setTodayDashboard = async (data) => setCacheDoc('todayDashboard', data);
+
 
 export const getCacheDoc = async (id) => {
   try { const s = await getDoc(doc(getDB(), 'cache', id)); return s.exists() ? s.data() : null; }

@@ -1,66 +1,121 @@
-import { useState, useEffect } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 
 const C={navy:'#0F3460',white:'#FFFFFF',dark:'#111827',muted:'#6B7280',border:'#D4D8DF',borderLight:'#E9EBF0',bg:'#ECEEF2',amber:'#D97706',win:'#059669',loss:'#DC2626',panelAlt:'#F6F7FA'};
-const SC={世界杯:'#1B5E20','MSI 2026':'#7C3AED','LOL 電競':'#7C3AED',NBA:'#C9082A',MLB:'#002D72',NHL:'#002654',UFC:'#D20A0A',英超:'#3D195B',歐冠:'#003399',西甲:'#C60B1E'};
-const SPORT_MAP={soccer_world_cup:'世界杯',soccer_fifa_world_cup:'世界杯',basketball_nba:'NBA',baseball_mlb:'MLB',icehockey_nhl:'NHL',mma_mixed_martial_arts:'UFC',soccer_epl:'英超',soccer_uefa_champs_league:'歐冠',soccer_spain_la_liga:'西甲'};
-const TZ={'Brazil':'巴西 🇧🇷','France':'法國 🇫🇷','Spain':'西班牙 🇪🇸','Argentina':'阿根廷 🇦🇷','Morocco':'摩洛哥 🇲🇦','England':'英格蘭 🏴','Portugal':'葡萄牙 🇵🇹','Germany':'德國 🇩🇪','Netherlands':'荷蘭 🇳🇱','Uruguay':'烏拉圭 🇺🇾','Saudi Arabia':'沙烏地阿拉伯 🇸🇦','USA':'美國 🇺🇸','United States':'美國 🇺🇸','Mexico':'墨西哥 🇲🇽','Japan':'日本 🇯🇵','Sweden':'瑞典 🇸🇪','Tunisia':'突尼西亞 🇹🇳'};
-const zh=en=>TZ[en]||en;
-const fmtT=iso=>{try{return new Date(iso).toLocaleString('zh-TW',{timeZone:'Asia/Taipei',month:'numeric',day:'numeric',hour:'2-digit',minute:'2-digit',hour12:false})+' 台灣';}catch{return ''}};
-const noVig=(h,d,a)=>{const arr=[h,d,a].filter(Boolean).map(Number).filter(v=>v>1),imp=arr.map(o=>1/o),tot=imp.reduce((s,p)=>s+p,0)||1;return{h:+(imp[0]/tot*100||50).toFixed(1),d:d?+(imp[1]/tot*100).toFixed(1):0,a:+(imp[d?2:1]/tot*100||50).toFixed(1)}};
-const DS={BET:{bg:'#ECFDF5',color:'#059669',l:'BET'},LEAN:{bg:'#FFFBEB',color:'#D97706',l:'LEAN'},WAIT:{bg:'#F6F7FA',color:'#6B7280',l:'WAIT'},NO_BET:{bg:'#FEF2F2',color:'#DC2626',l:'NO BET'}};
-const Stars=({n})=><span style={{color:C.amber,fontSize:13}}>{'★'.repeat(n)}{'☆'.repeat(5-n)}</span>;
+const SC={世界杯:'#1B5E20',NBA:'#C9082A',MLB:'#002D72',NHL:'#002654',UFC:'#D20A0A',英超:'#3D195B',歐冠:'#003399',西甲:'#C60B1E','LOL 電競':'#7C3AED','MSI 2026':'#7C3AED'};
+const DS={BET:{bg:'#ECFDF5',color:'#059669',label:'可關注'},LEAN:{bg:'#FFFBEB',color:'#D97706',label:'偏向觀察'},WAIT:{bg:'#F6F7FA',color:'#6B7280',label:'等待確認'},NO_BET:{bg:'#FEF2F2',color:'#DC2626',label:'不追價'}};
+const SECTION_LABEL={today:'今日賽事',value:'模型有價值',watch:'觀察名單',future:'未來賽事'};
+
 const Spin=({s=24})=><div style={{width:s,height:s,border:`2px solid ${C.border}`,borderTopColor:C.navy,borderRadius:'50%',animation:'spin 0.8s linear infinite',display:'inline-block'}}><style>{`@keyframes spin{to{transform:rotate(360deg)}}`}</style></div>;
-
-const DEMO_ITEMS=[
-  {id:'demo-msi-gen-t1',sport:'MSI 2026',status:'pending',accessLevel:'free',home:'Gen.G',away:'T1',homeEn:'Gen.G',awayEn:'T1',nvH:54.8,nvD:0,nvA:45.2,modelHome:56.1,modelAway:43.9,odds:{h:1.78,a:2.04},ev:-0.1,edge:1.3,decision:'WAIT',dataCompleteness:0.52,timeStr:'MSI 賽程待確認',analysis:'【賽前重點】Gen.G 與 T1 屬於頂級強強對話，核心差異通常不在單一路線，而在版本理解、BP 優先權、物件交換與中後期決策品質。\n【對位觀察】Gen.G 若能讓 Chovy 取得中路線權，前 15 分鐘的河道控制與先鋒節奏會是關鍵；T1 則更依賴 Faker 的開團判斷與邊線轉線速度。\n【風險提醒】電競賽事受版本、藍紅方、臨場 BP 與 BO5 準備度影響極大，目前沒有正式賽程與盤口時，不應把此場包裝成明確價值。\n【SignalEdge 判斷】先列觀察名單，待官方賽程、版本與賠率確認後再更新完整模型報告。',aiStatus:'done',stars:3},
-  {id:'demo-mlb-watch',sport:'MLB',status:'pending',accessLevel:'free',home:'Los Angeles Dodgers',away:'San Francisco Giants',homeEn:'Los Angeles Dodgers',awayEn:'San Francisco Giants',nvH:58.3,nvD:0,nvA:41.7,modelHome:59.1,modelAway:40.9,odds:{h:1.68,a:2.18},ev:-0.7,edge:0.8,decision:'WAIT',dataCompleteness:0.58,timeStr:'今日 / 賽程依資料更新',analysis:'【賽前重點】MLB 勝負判斷不能只看隊名與賠率，先發投手、牛棚連投、打線輪休與球場環境都會大幅影響結果。\n【市場觀察】目前主隊略佔優勢，但若先發投手或主力打線臨場調整，勝率區間可能快速改變。\n【風險提醒】牛棚前一戰使用量、風向、球場大小與左右投對位是賽前必查項目。\n【SignalEdge 判斷】先列為觀察場，等先發名單與盤口更新後再判斷是否有價格價值。',aiStatus:'done',stars:3},
-];
-
-const normalizeAnalysis=(a)=>({
+const pct=(n)=>Number.isFinite(Number(n))?`${Number(n).toFixed(1)}%`:'—';
+const fmt=(iso)=>{try{return new Date(iso).toLocaleString('zh-TW',{timeZone:'Asia/Taipei',month:'numeric',day:'numeric',hour:'2-digit',minute:'2-digit',hour12:false})+' 台灣';}catch{return''}};
+const normalize=(a)=>({
   ...a,
-  id:a.id||`${a.home}-${a.away}-${a.createdAt?.seconds||Date.now()}`,
-  sport:a.sport||'世界杯',
-  home:a.home||a.homeTeam||a.homeEn||'主隊', away:a.away||a.awayTeam||a.awayEn||'客隊',
-  homeEn:a.homeEn||a.home||'', awayEn:a.awayEn||a.away||'',
-  nvH:Number(a.nvH??a.marketHome??a.modelHome??50), nvD:Number(a.nvD??a.marketDraw??0), nvA:Number(a.nvA??a.marketAway??50),
-  modelHome:Number(a.modelHome??a.nvH??a.marketHome??50), modelAway:Number(a.modelAway??a.nvA??a.marketAway??50),
-  odds:a.odds||{h:2,a:2}, ev:Number(a.ev??0), edge:Number(a.edge??0), decision:a.decision||'WAIT',
-  dataCompleteness:Number(a.dataCompleteness??0.72),
-  timeStr:a.timeStr||fmtT(a.commence_time)||a.createdAt?.toDate?.()?.toLocaleString?.('zh-TW')||'',
-  aiStatus:a.analysis?'done':'idle', stars:a.stars||Math.max(1,Math.min(5,Math.round(3+Number(a.ev||0)/4))),
+  id:a.id||a.eventId||`${a.home}-${a.away}-${a.commence_time||Date.now()}`,
+  sport:a.sport||'綜合',
+  home:a.home||a.homeTeam||a.homeEn||'主隊',
+  away:a.away||a.awayTeam||a.awayEn||'客隊',
+  timeStr:a.timeStr||fmt(a.commence_time),
+  modelHome:Number(a.modelHome??a.dataBlock?.modelHome??0),
+  modelDraw:Number(a.modelDraw??a.dataBlock?.modelDraw??0),
+  modelAway:Number(a.modelAway??a.dataBlock?.modelAway??0),
+  nvH:Number(a.nvH??a.marketHome??a.dataBlock?.marketHome??0),
+  nvD:Number(a.nvD??a.marketDraw??a.dataBlock?.marketDraw??0),
+  nvA:Number(a.nvA??a.marketAway??a.dataBlock?.marketAway??0),
+  ev:Number(a.ev??a.dataBlock?.ev??0),
+  edge:Number(a.edge??a.dataBlock?.edge??0),
+  decision:a.decision||'WAIT',
+  dataCompleteness:Number(a.dataCompleteness??a.dataBlock?.dataCompleteness??0),
+  confidence:Number(a.confidence??a.dataBlock?.confidence??0),
+  risk:Number(a.risk??a.dataBlock?.risk??0),
+  topScores:a.topScores||a.dataBlock?.topScores||[],
+  marketRows:a.marketRows||a.dataBlock?.marketRows||[],
+  cancelConditions:a.cancelConditions||a.dataBlock?.cancelConditions||[],
+  sourceCoverage:a.sourceCoverage||a.dataBlock?.sourceCoverage||{},
+  modelVersion:a.modelVersion||'v6b',
 });
 
-const oddsEventToItem=(ev)=>{
-  const sp=SPORT_MAP[ev.sport_key];
-  const bm=ev.bookmakers?.[0],oc=bm?.markets?.find(m=>m.key==='h2h')?.outcomes||[];
-  const hO=Number(oc.find(o=>o.name===ev.home_team)?.price||2),aO=Number(oc.find(o=>o.name===ev.away_team)?.price||2),dO=Number(oc.find(o=>o.name==='Draw')?.price||0)||null;
-  const nv=noVig(hO,dO,aO);
-  const modelHome=+(nv.h+(sp==='世界杯'?1.2:0.6)).toFixed(1);
-  const edge=+(modelHome-nv.h).toFixed(1);
-  const evP=+((modelHome/100*hO-1)*100).toFixed(1);
-  return normalizeAnalysis({id:`live-${ev.id}`,sport:sp,status:'pending',accessLevel:'free',home:zh(ev.home_team),away:zh(ev.away_team),homeEn:ev.home_team,awayEn:ev.away_team,nvH:nv.h,nvD:nv.d,nvA:nv.a,modelHome,modelAway:+(100-modelHome-(nv.d||0)).toFixed(1),odds:{h:hO,d:dO,a:aO},ev:evP,edge,decision:evP>6&&edge>3?'BET':evP>2?'LEAN':'WAIT',dataCompleteness:0.72,timeStr:fmtT(ev.commence_time),commence_time:ev.commence_time,analysis:'',aiStatus:'idle'});
-};
+function Metric({label,value,color=C.dark}){return <div><div style={{fontSize:10,color:C.muted,fontWeight:800,marginBottom:3}}>{label}</div><div style={{fontSize:18,fontWeight:950,color,fontFamily:'ui-monospace,monospace'}}>{value}</div></div>}
 
-const callAI=async(card)=>{
-  const prompt=`DATA_BLOCK:\n賽事：${card.homeEn||card.home} vs ${card.awayEn||card.away}\n運動類型：${card.sport}\n市場去水概率：主 ${card.nvH}%${card.nvD?`｜平 ${card.nvD}%`:''}｜客 ${card.nvA}%\n模型概率：主 ${card.modelHome||card.nvH}%｜客 ${card.modelAway||card.nvA}%\n市場賠率：主 ${card.odds?.h||'N/A'}｜客 ${card.odds?.a||'N/A'}\n價格差異：${card.ev}%\n展示 Edge：${card.edge}%\n決策：${card.decision}\n資料完整度：${card.dataCompleteness}\n重要限制：若 Poisson/Elo 或投手/陣容資料不足，請明確說 WAIT，不要把價格差異 包裝成真正模型 edge。\n\n請用固定格式輸出：【一句話結論】【模型解讀】【關鍵風險】【賽前確認】【SignalEdge 判斷】。`;
-  const r=await fetch('/api/gateway',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({source:'aiProvider',action:'analyze',params:{prompt,type:'match'}})});
-  const d=await r.json().catch(()=>({}));
-  if(!r.ok||d.success===false) throw new Error(d.error||`HTTP ${r.status}`);
-  return d.result?.analysis||null;
-};
+function AnalysisCard({item, isVIP, isAdmin, onOpen}){
+  const a=normalize(item); const sc=SC[a.sport]||C.navy; const ds=DS[a.decision]||DS.WAIT;
+  const best=a.marketRows?.find(r=>r.role===a.bestRole)||a.marketRows?.[0];
+  const scoreText=a.topScores?.length?a.topScores.slice(0,3).map(s=>`${s.score} ${s.probPct}%`).join(' / '):'依盤口與賽前資料更新';
+  return <div style={{background:C.white,border:`1.5px solid ${C.border}`,borderLeft:`5px solid ${sc}`,borderRadius:'0 12px 12px 0',marginBottom:14,overflow:'hidden'}}>
+    <div style={{padding:'16px 20px'}}>
+      <div style={{display:'flex',justifyContent:'space-between',gap:10,flexWrap:'wrap',marginBottom:10}}>
+        <div style={{display:'flex',gap:6,alignItems:'center',flexWrap:'wrap'}}>
+          <span style={{background:sc+'18',color:sc,fontSize:10,fontWeight:900,padding:'3px 8px',borderRadius:4}}>{a.sport}</span>
+          <span style={{background:ds.bg,color:ds.color,fontSize:10,fontWeight:900,padding:'3px 9px',borderRadius:4}}>{ds.label}</span>
+          <span style={{fontSize:10,color:C.win,fontWeight:800}}>● 模型版 {a.modelVersion}</span>
+        </div>
+        <span style={{fontSize:11,color:C.amber,fontWeight:900}}>{a.timeStr}</span>
+      </div>
+      <button onClick={onOpen} style={{background:'none',border:'none',padding:0,textAlign:'left',cursor:'pointer'}}>
+        <div style={{fontSize:20,fontWeight:950,color:C.dark,marginBottom:2}}>{a.home} <span style={{color:C.muted,fontWeight:500,fontSize:14}}>vs</span> {a.away}</div>
+        <div style={{fontSize:11,color:C.muted,fontFamily:'ui-monospace,monospace'}}>{a.homeEn||a.home} vs {a.awayEn||a.away}</div>
+      </button>
+      <div style={{display:'grid',gridTemplateColumns:'repeat(auto-fit,minmax(140px,1fr))',gap:12,marginTop:14,marginBottom:12}}>
+        <div style={{background:C.panelAlt,borderRadius:10,padding:12}}><Metric label="模型勝率" value={`${pct(a.modelHome)} / ${a.modelDraw?pct(a.modelDraw)+' / ':''}${pct(a.modelAway)}`} color={C.navy}/></div>
+        <div style={{background:C.panelAlt,borderRadius:10,padding:12}}><Metric label="市場去水" value={`${pct(a.nvH)} / ${a.nvD?pct(a.nvD)+' / ':''}${pct(a.nvA)}`}/></div>
+        <div style={{background:C.panelAlt,borderRadius:10,padding:12}}><Metric label="EV / Edge" value={`${a.ev>0?'+':''}${pct(a.ev).replace('%','')}% / ${a.edge>0?'+':''}${pct(a.edge).replace('%','')}%`} color={a.ev>0?C.win:C.loss}/></div>
+        <div style={{background:C.panelAlt,borderRadius:10,padding:12}}><Metric label="資料/信心" value={`${Math.round(a.dataCompleteness)}/${Math.round(a.confidence||0)}`} color={sc}/></div>
+      </div>
+      <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:12,marginBottom:12}}>
+        <div style={{background:'#F8FAFC',border:`1px solid ${C.borderLight}`,borderRadius:10,padding:12}}>
+          <div style={{fontSize:11,color:C.muted,fontWeight:900,marginBottom:6}}>🎯 比分 / 劇本</div>
+          <div style={{fontSize:13,color:C.dark,fontWeight:800}}>{scoreText}</div>
+          {a.over25!=null&&<div style={{fontSize:11,color:C.muted,marginTop:5}}>大小 2.5：Over {pct(a.over25)}</div>}
+        </div>
+        <div style={{background:'#F8FAFC',border:`1px solid ${C.borderLight}`,borderRadius:10,padding:12}}>
+          <div style={{fontSize:11,color:C.muted,fontWeight:900,marginBottom:6}}>💡 價格觀察</div>
+          <div style={{fontSize:13,color:C.dark,lineHeight:1.6}}>觀察方向：<b>{a.pickName||best?.name||'—'}</b>；最低參考價 <b>{a.minOdds||best?.minOdds||'—'}</b></div>
+        </div>
+      </div>
+      {a.analysis&&<div style={{fontSize:13,color:'#374151',lineHeight:1.8,whiteSpace:'pre-line',borderTop:`1px solid ${C.borderLight}`,paddingTop:12}}>{a.analysis}</div>}
+      {isVIP?<div style={{marginTop:12,background:'#FFFBEB',border:'1px solid #FDE68A',borderRadius:10,padding:12}}>
+        <div style={{fontSize:11,fontWeight:950,color:C.amber,marginBottom:8}}>進階資料</div>
+        <div style={{display:'grid',gridTemplateColumns:'repeat(auto-fit,minmax(120px,1fr))',gap:10}}>
+          <Metric label="莊家水錢" value={pct(a.overround||a.dataBlock?.overround||0)}/>
+          <Metric label="風險分數" value={`${Math.round(a.risk||0)}/100`} color={a.risk>70?C.loss:C.dark}/>
+          <Metric label="最佳賠率" value={a.bestOdds||best?.odds||'—'}/>
+          <Metric label="最低參考" value={a.minOdds||best?.minOdds||'—'} color={C.navy}/>
+        </div>
+        <div style={{fontSize:11,color:'#92400E',marginTop:8}}>取消條件：{(a.cancelConditions||[]).slice(0,2).join('；') || '臨場資料改變或賠率跌破門檻。'}</div>
+      </div>:<div style={{marginTop:12,border:`1.5px dashed ${C.border}`,borderRadius:10,padding:12,textAlign:'center',color:C.muted,fontSize:12}}>🔒 詳細 EV、最低參考價與取消條件為 VIP 內容</div>}
+    </div>
+  </div>;
+}
 
-export default function Dashboard({role,setPage}){
-  const [items,setItems]=useState([]);const [loading,setLoading]=useState(true);const [source,setSource]=useState('');const [filter,setFilter]=useState('全部');const [exp,setExp]=useState(null);const [genId,setGenId]=useState(null);
-  const isAdmin=role==='admin'||role==='super_admin';const isVIP=role==='vip'||isAdmin;
-  useEffect(()=>{(async()=>{setLoading(true);const merged=[];try{const mod=await import('../services/firestore.js');const fs=await mod.getAnalyses?.({limitN:40});if(fs?.length)merged.push(...fs.map(normalizeAnalysis));}catch(e){console.warn('[Dashboard] firestore skipped:',e.message);}try{const r=await fetch('/api/gateway',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({source:'odds',action:'getUpcoming',params:{region:'eu',limit:120}})});const data=await r.json();if(data.success&&data.result?.events?.length){const now=Date.now();merged.push(...data.result.events.filter(ev=>SPORT_MAP[ev.sport_key]&&new Date(ev.commence_time).getTime()>now-4*3600000&&new Date(ev.commence_time).getTime()<now+5*24*3600000).map(oddsEventToItem));}}catch(e){console.warn('[Dashboard] live odds skipped:',e.message);}const byKey=new Map();[...merged,...DEMO_ITEMS.map(normalizeAnalysis)].forEach(x=>{const k=`${x.sport}-${x.homeEn||x.home}-${x.awayEn||x.away}`;if(!byKey.has(k)||String(x.id).startsWith('live-'))byKey.set(k,x);});const list=Array.from(byKey.values()).sort((a,b)=>{const ta=new Date(a.commence_time||0).getTime()||0,tb=new Date(b.commence_time||0).getTime()||0;return ta-tb;}).slice(0,30);setItems(list);setSource(merged.length?'mixed':'demo');setLoading(false);})();},[]);
-  const adminGen=async(card)=>{if(!isAdmin)return;setGenId(card.id);try{const analysis=await callAI(card);setItems(p=>p.map(a=>a.id===card.id?{...a,analysis,aiStatus:analysis?'done':'error'}:a));if(analysis){try{const mod=await import('../services/firestore.js');await mod.saveAnalysis?.({...card,analysis,aiStatus:'done',autoGenerated:true});}catch(e){console.warn('[Dashboard] save analysis skipped:',e.message);}}}catch(e){alert('分析生成失敗：'+e.message);setItems(p=>p.map(a=>a.id===card.id?{...a,aiStatus:'error'}:a));}setGenId(null);};
-  const sports=['全部','世界杯','MLB','MSI 2026','LOL 電競','NBA'].filter((s,i,arr)=>i===0||items.some(a=>a.sport===s)||['MLB','MSI 2026','LOL 電競'].includes(s));
-  const filtered=items.filter(a=>filter==='全部'||a.sport===filter).filter(()=>role!=='guest');
-  return <div style={{background:C.bg,minHeight:'100vh'}}><div style={{maxWidth:1000,margin:'0 auto',padding:'28px 20px'}}><div style={{marginBottom:20}}><h2 style={{fontSize:26,fontWeight:900,color:C.dark,margin:'0 0 4px'}}>今日賽事預測</h2><p style={{color:C.muted,fontSize:13,margin:0}}>每日模型更新 · 新手看方向與比分 · Pro 看價格、風險與賽前條件</p></div>
-  {role==='guest'&&<div style={{background:C.navy,borderRadius:12,padding:'28px 24px',textAlign:'center',marginBottom:20}}><div style={{fontSize:18,fontWeight:800,color:'#fff',marginBottom:8}}>📊 每日賽事分析報告</div><div style={{fontSize:13,color:'rgba(255,255,255,0.7)',marginBottom:16}}>免費加入即可查看今日更多分析</div><button onClick={()=>setPage?.('login')} style={{background:'#E9B44C',color:C.navy,border:'none',padding:'10px 24px',borderRadius:8,cursor:'pointer',fontSize:14,fontWeight:800}}>免費加入 →</button></div>}
-  {isAdmin&&<div style={{background:'#EFF6FF',border:'1px solid #BFDBFE',borderRadius:8,padding:'10px 16px',marginBottom:16,fontSize:12,color:C.navy,display:'flex',justifyContent:'space-between',alignItems:'center',gap:12,flexWrap:'wrap'}}><span>📋 目前資料來源：{source}。若只看到展示卡，代表今日快取尚未更新完整賽事。</span><button onClick={async()=>{try{const r=await fetch('/api/cron/generate-analysis',{method:'POST',headers:{'Content-Type':'application/json','x-admin-trigger':'1'}});const d=await r.json();d.success?window.location.reload():alert('❌ '+d.error);}catch(e){alert('❌ '+e.message);}}} style={{background:C.navy,color:C.white,border:'none',padding:'6px 14px',borderRadius:6,cursor:'pointer',fontSize:11,fontWeight:700}}>更新分析</button></div>}
-  <div style={{overflowX:'auto',marginBottom:16}}><div style={{display:'flex',border:`1px solid ${C.border}`,borderRadius:8,overflow:'hidden',background:C.white,width:'max-content'}}>{sports.map(s=><button key={s} onClick={()=>setFilter(s)} style={{padding:'7px 16px',border:'none',cursor:'pointer',background:filter===s?C.navy:'transparent',color:filter===s?C.white:C.muted,fontSize:12,fontWeight:700,borderRight:`1px solid ${C.borderLight}`,whiteSpace:'nowrap'}}>{s}</button>)}</div></div>
-  {loading&&<div style={{textAlign:'center',padding:48}}><Spin s={36}/></div>}
-  {!loading&&filtered.length===0&&<div style={{background:C.white,border:`1px solid ${C.border}`,borderRadius:10,padding:28,textAlign:'center',color:C.muted}}>目前沒有 {filter} 賽事資料。請到 Admin 更新，或稍後再重新整理。</div>}
-  {filtered.map(a=>{const sc=SC[a.sport]||C.navy,ds=DS[a.decision]||DS.WAIT,isO=exp===a.id,hasAI=a.aiStatus==='done'&&a.analysis;const predicted=a.modelHome>=a.modelAway?a.home:a.away;const minOdds=a.modelHome>2?+(1/((a.modelHome-2)/100)).toFixed(2):'—';const scenarioLines=a.sport==='MLB'?['4-3','5-4','3-2']:(a.sport?.includes('LOL')||a.sport==='MSI 2026'?['2-1','3-2','3-1']:['2-1','1-0','2-0']);return <div key={a.id} style={{background:C.white,border:`1.5px solid ${C.border}`,borderLeft:`5px solid ${sc}`,borderRadius:'0 12px 12px 0',marginBottom:12}}><div style={{padding:'16px 20px'}}><div style={{display:'flex',justifyContent:'space-between',marginBottom:10,flexWrap:'wrap',gap:6}}><div style={{display:'flex',gap:6,alignItems:'center',flexWrap:'wrap'}}><span style={{background:sc+'18',color:sc,fontSize:10,fontWeight:700,padding:'2px 8px',borderRadius:3}}>{a.sport}</span><span style={{fontSize:10,fontWeight:800,padding:'3px 9px',borderRadius:4,background:ds.bg,color:ds.color}}>{ds.l}</span>{hasAI&&<span style={{fontSize:10,color:C.win,fontWeight:600}}>● 已產生報告</span>}</div><span style={{fontSize:11,color:C.amber,fontWeight:700}}>{a.timeStr}</span></div><div style={{fontSize:18,fontWeight:800,color:C.dark,marginBottom:2}}>{a.home} <span style={{color:C.muted,fontWeight:400,fontSize:14}}>vs</span> {a.away}</div><div style={{fontSize:10,color:C.muted,marginBottom:12,fontFamily:'ui-monospace,monospace'}}>{a.homeEn} vs {a.awayEn}</div><div style={{background:sc+'08',borderRadius:8,padding:'12px 14px',marginBottom:12,border:`1px solid ${sc}22`}}><div style={{display:'flex',justifyContent:'space-between',alignItems:'center',flexWrap:'wrap',gap:8}}><div><Stars n={a.stars||3}/><div style={{fontSize:13,fontWeight:700,color:C.dark,marginTop:4}}>模型傾向：{predicted} 優勢</div><div style={{fontSize:11,color:C.muted,marginTop:4}}>資料完整度、盤口與模型仍需賽前確認</div></div><div style={{textAlign:'right'}}><div style={{fontSize:10,color:C.muted,marginBottom:2}}>信心指數</div><div style={{fontSize:22,fontWeight:900,color:sc}}>{Math.round((a.dataCompleteness||0.72)*100)}</div><div style={{fontSize:9,color:C.muted}}>/100</div></div></div></div><div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:10,marginBottom:12}}><div style={{background:C.panelAlt,borderRadius:8,padding:'10px 12px'}}><div style={{fontSize:10,color:C.muted,fontWeight:700,marginBottom:6}}>🎯 預測比分 / 劇本</div>{scenarioLines.map((s,i)=><div key={i} style={{fontSize:i===0?14:12,fontWeight:i===0?800:400,color:i===0?sc:C.muted,marginBottom:2}}>{i===0?'📍':`${i+1}.`} {s}</div>)}</div><div style={{background:C.panelAlt,borderRadius:8,padding:'10px 12px'}}><div style={{fontSize:10,color:C.muted,fontWeight:700,marginBottom:6}}>📊 市場/模型重點</div><div style={{fontSize:16,fontWeight:900,color:C.navy}}>{a.modelHome||a.nvH}%</div><div style={{fontSize:11,color:C.muted}}>模型主隊概率</div></div></div><div style={{marginBottom:12}}><div style={{display:'flex',justifyContent:'space-between',fontSize:10,color:C.muted,marginBottom:3}}><span>主 {a.nvH}%</span>{a.nvD>0&&<span>平 {a.nvD}%</span>}<span>客 {a.nvA}%</span></div><div style={{height:6,background:'#FECACA',borderRadius:3,overflow:'hidden',display:'flex'}}><div style={{width:`${Math.min(100,a.nvH)}%`,background:C.win}}/>{a.nvD>0&&<div style={{width:`${Math.min(100,a.nvD)}%`,background:C.amber}}/>}</div></div><div style={{borderTop:`1px solid ${C.borderLight}`,paddingTop:10}}>{hasAI?<div><div style={{fontSize:12,color:'#374151',lineHeight:1.7,maxHeight:isO?'none':92,overflow:'hidden',position:'relative',cursor:'pointer',whiteSpace:'pre-line'}} onClick={()=>setExp(isO?null:a.id)}>{a.analysis}{!isO&&a.analysis.length>160&&<div style={{position:'absolute',bottom:0,left:0,right:0,height:24,background:'linear-gradient(transparent,#fff)'}}/>}</div>{a.analysis.length>160&&<button onClick={()=>setExp(isO?null:a.id)} style={{fontSize:11,color:C.navy,background:'none',border:'none',cursor:'pointer'}}>{isO?'收起 ▲':'展開 ▾'}</button>}</div>:isAdmin?<div style={{display:'flex',justifyContent:'space-between',alignItems:'center'}}><span style={{fontSize:12,color:C.muted}}>尚未產生分析</span><button onClick={()=>adminGen(a)} disabled={genId===a.id} style={{fontSize:11,padding:'5px 10px',border:`1px solid ${C.navy}`,color:C.navy,background:'transparent',borderRadius:5,cursor:'pointer',fontWeight:600}}>{genId===a.id?<><Spin s={11}/> 生成中...</>:'生成分析'}</button></div>:<div style={{fontSize:12,color:C.muted}}>分析即將更新</div>}</div>{isVIP?<div style={{marginTop:12,background:'#FFFBEB',border:'1px solid #FDE68A',borderRadius:8,padding:'12px 14px'}}><div style={{fontSize:11,fontWeight:800,color:'#D97706',marginBottom:8}}>💰 進階分析（VIP）</div><div style={{display:'grid',gridTemplateColumns:'repeat(auto-fit,minmax(100px,1fr))',gap:10}}><div><div style={{fontSize:9,color:C.muted}}>去水主隊</div><div style={{fontSize:16,fontWeight:900,color:C.win}}>{a.nvH}%</div></div><div><div style={{fontSize:9,color:C.muted}}>模型概率</div><div style={{fontSize:16,fontWeight:900,color:C.dark}}>{a.modelHome||'—'}%</div></div><div><div style={{fontSize:9,color:C.muted}}>價格差異</div><div style={{fontSize:16,fontWeight:900,color:+a.ev>0?C.win:C.loss}}>{+a.ev>0?'+':''}{a.ev}%</div></div><div><div style={{fontSize:9,color:C.muted}}>最低參考賠率</div><div style={{fontSize:14,fontWeight:700,color:C.navy}}>{minOdds}</div></div></div><div style={{marginTop:8,fontSize:11,color:'#92400E'}}>📌 取消條件：資料不足、首發/投手/版本未確認、賠率跌破門檻。</div></div>:<div style={{marginTop:10,border:`1.5px dashed ${C.border}`,borderRadius:8,padding:'12px',textAlign:'center'}}><div style={{fontSize:12,fontWeight:700,color:C.muted,marginBottom:8}}>🔒 EV分析、最低可參考賠率 · VIP專屬</div><button onClick={()=>setPage?.('upgrade')} style={{background:C.navy,color:C.white,border:'none',padding:'7px 18px',borderRadius:6,cursor:'pointer',fontSize:11,fontWeight:700}}>升級 VIP 解鎖</button></div>}</div></div>})}<div style={{marginTop:20,padding:'10px',background:'#F6F7FA',border:'1px solid #D4D8DF',borderRadius:8,fontSize:11,color:C.muted,textAlign:'center'}}>★ 星級代表「模型傾向強度 + 資料完整度」，不代表勝率保證 · 價格差異 不是正式模型 edge · 不提供投注服務</div></div></div>;
+export default function Dashboard({role,setPage,setSelectedSignal}){
+  const [cache,setCache]=useState(null); const [loading,setLoading]=useState(true); const [filter,setFilter]=useState('全部'); const [section,setSection]=useState('today'); const [updating,setUpdating]=useState(false);
+  const isAdmin=role==='admin'||role==='super_admin'; const isVIP=role==='vip'||role==='agent'||isAdmin;
+
+  const load=async()=>{setLoading(true);try{const mod=await import('../services/firestore.js');const d=await mod.getTodayDashboard?.();setCache(d||null);}catch(e){console.warn('[Dashboard] cache skipped:',e.message);setCache(null);}setLoading(false);};
+  useEffect(()=>{load();},[]);
+
+  const update=async()=>{setUpdating(true);try{const r=await fetch('/api/cron/generate-analysis',{method:'POST',headers:{'Content-Type':'application/json','x-admin-trigger':'1'}});const d=await r.json().catch(()=>({}));if(!r.ok||d.success===false)throw new Error(d.error||`HTTP ${r.status}`);await load();alert(`✅ 已更新：今日 ${d.todayCount||0} 場，產生 ${d.generated||0} 篇分析`);}catch(e){alert('更新失敗：'+e.message)}setUpdating(false);};
+
+  const items=useMemo(()=>{
+    const sec=cache?.sections||{}; const list=section==='value'?sec.value:section==='watch'?sec.watch:section==='future'?sec.future:sec.today;
+    return (list||[]).map(normalize).filter(a=>filter==='全部'||a.sport===filter);
+  },[cache,filter,section]);
+  const sports=useMemo(()=>['全部',...Array.from(new Set([...(cache?.sections?.today||[]),...(cache?.sections?.future||[])].map(x=>x.sport).filter(Boolean)))], [cache]);
+  const last=cache?.generatedAt?new Date(cache.generatedAt).toLocaleString('zh-TW',{timeZone:'Asia/Taipei'}):'尚未建立快取';
+
+  if(role==='guest') return <div style={{background:C.bg,minHeight:'100vh',padding:'60px 20px',textAlign:'center'}}><h2 style={{color:C.dark}}>每日賽事分析報告</h2><p style={{color:C.muted}}>免費加入即可查看今日模型預測與賽前重點。</p><button onClick={()=>setPage?.('login')} style={{background:C.navy,color:C.white,border:'none',padding:'10px 24px',borderRadius:8,fontWeight:900,cursor:'pointer'}}>免費加入</button></div>;
+
+  return <div style={{background:C.bg,minHeight:'100vh'}}><div style={{maxWidth:1040,margin:'0 auto',padding:'28px 20px'}}>
+    <div style={{marginBottom:18}}><h2 style={{fontSize:28,fontWeight:950,color:C.dark,margin:'0 0 6px'}}>今日賽事預測</h2><p style={{color:C.muted,fontSize:13,margin:0}}>資料先同步、模型先計算，前台只讀快取；今日賽事不混入昨天或展示卡。</p></div>
+    <div style={{background:'#EFF6FF',border:'1px solid #BFDBFE',borderRadius:10,padding:'12px 16px',marginBottom:16,display:'flex',justifyContent:'space-between',gap:12,alignItems:'center',flexWrap:'wrap'}}>
+      <div style={{fontSize:12,color:C.navy,lineHeight:1.6}}>📌 今日快取：{cache?.dateKey||'—'}｜更新：{last}｜模型：{cache?.modelVersion||'—'}｜來源：{cache?.sourceCoverage?.odds?'賠率✓':'賠率—'}</div>
+      {isAdmin&&<button onClick={update} disabled={updating} style={{background:C.navy,color:C.white,border:'none',borderRadius:8,padding:'8px 14px',fontSize:12,fontWeight:900,cursor:'pointer'}}>{updating?<><Spin s={12}/> 更新中</>:'更新今日快取'}</button>}
+    </div>
+    <div style={{display:'flex',gap:8,flexWrap:'wrap',marginBottom:12}}>{Object.keys(SECTION_LABEL).map(k=><button key={k} onClick={()=>setSection(k)} style={{padding:'8px 14px',border:`1px solid ${C.border}`,borderRadius:8,cursor:'pointer',background:section===k?C.navy:C.white,color:section===k?C.white:C.muted,fontWeight:900,fontSize:12}}>{SECTION_LABEL[k]}</button>)}</div>
+    <div style={{display:'flex',gap:0,overflowX:'auto',marginBottom:16}}><div style={{display:'flex',border:`1px solid ${C.border}`,borderRadius:8,overflow:'hidden',background:C.white}}>{sports.map(s=><button key={s} onClick={()=>setFilter(s)} style={{padding:'7px 16px',border:'none',borderRight:`1px solid ${C.borderLight}`,background:filter===s?C.navy:'transparent',color:filter===s?C.white:C.muted,cursor:'pointer',fontWeight:800,fontSize:12,whiteSpace:'nowrap'}}>{s}</button>)}</div></div>
+    {loading&&<div style={{textAlign:'center',padding:50}}><Spin s={38}/></div>}
+    {!loading&&!cache&&<div style={{background:C.white,border:`1px solid ${C.border}`,borderRadius:12,padding:28,textAlign:'center',color:C.muted}}>今日模型快取尚未建立。請管理員按「更新今日快取」。</div>}
+    {!loading&&cache&&items.length===0&&<div style={{background:C.white,border:`1px solid ${C.border}`,borderRadius:12,padding:28,textAlign:'center',color:C.muted}}>目前沒有 {filter} 的{SECTION_LABEL[section]}。可切換「未來賽事」或由 Admin 更新快取。</div>}
+    {items.map(item=><AnalysisCard key={item.id} item={item} isVIP={isVIP} isAdmin={isAdmin} onOpen={()=>{setSelectedSignal?.(normalize(item));setPage?.('signal-detail')}}/>)}
+    <div style={{marginTop:20,padding:'10px 12px',background:'#F8FAFC',border:`1px solid ${C.border}`,borderRadius:10,fontSize:11,color:C.muted,textAlign:'center'}}>SignalEdge 顯示的是機率與價格比較，不保證賽果；WAIT / NO BET 是模型風控的一部分。</div>
+  </div></div>;
 }

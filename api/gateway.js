@@ -64,7 +64,7 @@ export default async function handler(req, res) {
   if (req.method === 'OPTIONS') return res.status(200).end();
 
   if (req.method === 'GET') {
-    return res.json({ status: 'ok', sources: Object.keys(SOURCES), version: '6A' });
+    return res.json({ status: 'ok', sources: Object.keys(SOURCES), version: '6B' });
   }
 
   if (req.method !== 'POST') return res.status(405).json({ error: 'Method not allowed' });
