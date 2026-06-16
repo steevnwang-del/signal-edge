@@ -29,6 +29,9 @@ export default function AdminPanel({signals,setPreviewRole,setPage,siteSettings,
   const [plans,setPlans]=useState(siteSettings?.plans||{});
   const [ads,setAds]=useState(siteSettings?.ads?.length ? siteSettings.ads : [DEFAULT_AD]);
   const [invite,setInvite]=useState(siteSettings?.inviteRewards||{enabled:true,inviterUnlocks:2,inviteeUnlocks:1,rewardDays:1,allGamesThreshold:3,passThreshold:10});
+  const [allInvites,setAllInvites]=useState([]);
+  const [invitesLoading,setInvitesLoading]=useState(false);
+  const loadAllInvites=async()=>{setInvitesLoading(true);try{const mod=await import('../../services/firestore.js');const list=await mod.getAllInvites?.({limitN:200});setAllInvites(list||[]);}catch(e){console.warn('[Admin] loadAllInvites:',e.message);}setInvitesLoading(false);};
   const [freeLimits,setFreeLimits]=useState(siteSettings?.freeLimits||{guestDailyCards:3,freeDailyCards:5,registeredBonusCards:2});
   const [brand,setBrand]=useState(siteSettings?.brandSettings||{showTaiwanCalculator:true,showInviteCta:true,showEngineeringCopy:false});
   const [analysisSettings,setAnalysisSettings]=useState(siteSettings?.analysisSettings||{enabledSports:['世界杯','MLB','NBA','電競'],minDataCompleteness:0.65,autoGenerateCount:12});
@@ -60,11 +63,57 @@ export default function AdminPanel({signals,setPreviewRole,setPage,siteSettings,
 
   const renderSettle=()=> <Card><div style={{fontSize:16,fontWeight:950,color:C.dark,marginBottom:8}}>自動結算與手動覆核</div><div style={{fontSize:13,color:C.muted,lineHeight:1.8,marginBottom:14}}>自動結算依據：比賽狀態為 final/completed、取得最終比分、對照分析當時的市場與推薦方向判斷 win / loss / push / void。手動結算保留給延賽、腰斬、比分 API 不一致或特殊盤口規則。</div><div style={{display:'grid',gap:8}}>{(signals||[]).slice(0,8).map((x,i)=><div key={x.id||i} style={{display:'flex',justifyContent:'space-between',alignItems:'center',gap:10,background:C.panelAlt,border:`1px solid ${C.border}`,borderRadius:8,padding:10}}><div style={{fontSize:13,fontWeight:800,color:C.dark}}>{x.home||'主隊'} vs {x.away||'客隊'}</div><div style={{display:'flex',gap:6}}><button onClick={async()=>{const mod=await import('../../services/firestore.js');x.id&&await mod.updateAnalysis?.(x.id,{result:'win'});alert('已標記 win');loadStats();}} style={{background:C.win,color:C.white,border:'none',borderRadius:6,padding:'6px 10px',cursor:'pointer',fontSize:11,fontWeight:800}}>WIN</button><button onClick={async()=>{const mod=await import('../../services/firestore.js');x.id&&await mod.updateAnalysis?.(x.id,{result:'loss'});alert('已標記 loss');loadStats();}} style={{background:C.loss,color:C.white,border:'none',borderRadius:6,padding:'6px 10px',cursor:'pointer',fontSize:11,fontWeight:800}}>LOSS</button></div></div>)}</div></Card>;
 
-  const renderUsers=()=> <div><div style={{display:'flex',justifyContent:'space-between',marginBottom:12}}><b>用戶列表（{users.length}）</b><button onClick={loadUsers}>重新整理</button></div><Card style={{overflow:'auto'}}><table style={{width:'100%',borderCollapse:'collapse',minWidth:620}}><thead><tr>{['姓名','Email','角色','加入','操作'].map(h=><th key={h} style={{textAlign:'left',fontSize:11,color:C.muted,padding:10,borderBottom:`1px solid ${C.border}`}}>{h}</th>)}</tr></thead><tbody>{users.map(u=><tr key={u.id}><td style={{padding:10,fontWeight:800}}>{u.displayName||'—'}</td><td style={{padding:10,fontSize:12,color:C.muted}}>{u.email}</td><td style={{padding:10}}>{editing?.id===u.id?<select value={editing.role} onChange={e=>setEditing({...editing,role:e.target.value})}>{editableRolesFor(u).map(r=><option key={r}>{r}</option>)}</select>:<span style={{fontSize:11,fontWeight:800,padding:'3px 8px',borderRadius:4,background:(RC[u.role]||C.muted)+'20',color:RC[u.role]||C.muted}}>{isOwnerUser(u)?'owner / super_admin':(u.role||'free')}</span>}</td><td style={{padding:10,fontSize:12,color:C.muted}}>{u.createdAt?.toDate?.()?.toLocaleDateString('zh-TW')||'—'}</td><td style={{padding:10}}>{editing?.id===u.id?<><button onClick={saveUser}>儲存</button><button onClick={()=>setEditing(null)}>取消</button></>:<button disabled={isOwnerUser(u)} onClick={()=>setEditing({...u})}>{isOwnerUser(u)?'已鎖定':'編輯'}</button>}</td></tr>)}</tbody></table></Card></div>;
+  const renderUsers=()=> <div><div style={{display:'flex',justifyContent:'space-between',marginBottom:12}}><b>用戶列表（{users.length}）</b><button onClick={loadUsers}>重新整理</button></div><Card style={{overflow:'auto'}}><table style={{width:'100%',borderCollapse:'collapse',minWidth:620}}><thead><tr>{['姓名','Email','角色','邀請碼','加入','操作'].map(h=><th key={h} style={{textAlign:'left',fontSize:11,color:C.muted,padding:10,borderBottom:`1px solid ${C.border}`}}>{h}</th>)}</tr></thead><tbody>{users.map(u=><tr key={u.id}><td style={{padding:10,fontWeight:800}}>{u.displayName||'—'}</td><td style={{padding:10,fontSize:12,color:C.muted}}>{u.email}</td><td style={{padding:10}}>{editing?.id===u.id?<select value={editing.role} onChange={e=>setEditing({...editing,role:e.target.value})}>{editableRolesFor(u).map(r=><option key={r}>{r}</option>)}</select>:<span style={{fontSize:11,fontWeight:800,padding:'3px 8px',borderRadius:4,background:(RC[u.role]||C.muted)+'20',color:RC[u.role]||C.muted}}>{isOwnerUser(u)?'owner / super_admin':(u.role||'free')}</span>}</td><td style={{padding:10,fontSize:12,color:C.muted}}>{u.createdAt?.toDate?.()?.toLocaleDateString('zh-TW')||'—'}</td><td style={{padding:10,fontSize:11,fontFamily:'monospace',color:'#7C3AED',fontWeight:700}}>{u.invitedByCode||'—'}</td><td style={{padding:10}}>{editing?.id===u.id?<><button onClick={saveUser}>儲存</button><button onClick={()=>setEditing(null)}>取消</button></>:<button disabled={isOwnerUser(u)} onClick={()=>setEditing({...u})}>{isOwnerUser(u)?'已鎖定':'編輯'}</button>}</td></tr>)}</tbody></table></Card></div>;
 
   const renderPricing=()=> <Card><div style={{fontSize:16,fontWeight:950,marginBottom:14}}>定價方案</div><div style={{display:'grid',gap:12}}>{Object.entries(plans||{}).map(([key,plan])=><div key={key} style={{border:`1px solid ${C.border}`,borderRadius:10,padding:14}}><div style={{fontWeight:900,marginBottom:10}}>{key}</div><div style={{display:'grid',gridTemplateColumns:'repeat(auto-fit,minmax(160px,1fr))',gap:10}}>{['name','price','usd','period','desc'].map(k=><Field key={k} label={k}><input value={plan[k]??''} type={k==='price'||k==='usd'?'number':'text'} onChange={e=>setPlans(p=>({...p,[key]:{...plan,[k]:k==='price'||k==='usd'?+e.target.value:e.target.value}}))} style={input}/></Field>)}<label style={{display:'flex',alignItems:'center',gap:8,fontSize:13}}><input type="checkbox" checked={!!plan.enabled} onChange={e=>setPlans(p=>({...p,[key]:{...plan,enabled:e.target.checked}}))}/>啟用</label></div></div>)}</div><button onClick={()=>savePatch({plans},'定價方案已儲存')} style={{marginTop:14,background:C.navy,color:C.white,border:'none',borderRadius:8,padding:'10px 18px',fontWeight:850}}>儲存定價</button></Card>;
 
-  const renderInvite=()=> <Card><div style={{fontSize:16,fontWeight:950,marginBottom:8}}>邀請獎勵設定</div><p style={{fontSize:13,color:C.muted,lineHeight:1.7}}>前台不顯示佣金與分潤；用邀請好友解鎖分析，降低品牌與合規風險。</p><div style={{display:'grid',gridTemplateColumns:'repeat(auto-fit,minmax(180px,1fr))',gap:12}}>{[['inviterUnlocks','邀請人解鎖場次'],['inviteeUnlocks','被邀請人解鎖場次'],['rewardDays','獎勵有效天數'],['allGamesThreshold','解鎖今日全場門檻'],['passThreshold','短期通行證門檻']].map(([k,l])=><Field key={k} label={l}><input type="number" value={invite[k]??0} onChange={e=>setInvite(p=>({...p,[k]:+e.target.value}))} style={input}/></Field>)}<label style={{display:'flex',alignItems:'center',gap:8,fontSize:13}}><input type="checkbox" checked={!!invite.enabled} onChange={e=>setInvite(p=>({...p,enabled:e.target.checked}))}/>啟用邀請獎勵</label></div><button onClick={()=>savePatch({inviteRewards:invite},'邀請獎勵已儲存')} style={{marginTop:14,background:C.navy,color:C.white,border:'none',borderRadius:8,padding:'10px 18px',fontWeight:850}}>儲存邀請設定</button></Card>;
+  const renderInvite=()=><div style={{display:'grid',gap:16}}>
+    <Card>
+      <div style={{fontSize:16,fontWeight:950,marginBottom:8}}>邀請獎勵設定</div>
+      <p style={{fontSize:13,color:C.muted,lineHeight:1.7,marginBottom:14}}>前台不顯示佣金與分潤；用邀請好友解鎖分析，降低品牌與合規風險。</p>
+      <div style={{display:'grid',gridTemplateColumns:'repeat(auto-fit,minmax(180px,1fr))',gap:12}}>
+        {[['inviterUnlocks','邀請人解鎖場次'],['inviteeUnlocks','被邀請人解鎖場次'],['rewardDays','獎勵有效天數'],['allGamesThreshold','解鎖今日全場門檻'],['passThreshold','短期通行證門檻']].map(([k,l])=>(
+          <Field key={k} label={l}><input type="number" value={invite[k]??0} onChange={e=>setInvite(p=>({...p,[k]:+e.target.value}))} style={input}/></Field>
+        ))}
+        <label style={{display:'flex',alignItems:'center',gap:8,fontSize:13}}><input type="checkbox" checked={!!invite.enabled} onChange={e=>setInvite(p=>({...p,enabled:e.target.checked}))}/>啟用邀請獎勵</label>
+      </div>
+      <button onClick={()=>savePatch({inviteRewards:invite},'邀請獎勵已儲存')} style={{marginTop:14,background:C.navy,color:C.white,border:'none',borderRadius:8,padding:'10px 18px',fontWeight:850}}>儲存邀請設定</button>
+    </Card>
+    <Card>
+      <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:14}}>
+        <div>
+          <div style={{fontSize:16,fontWeight:950,color:C.dark}}>邀請紀錄（{allInvites.length} 筆）</div>
+          <div style={{fontSize:12,color:C.muted,marginTop:2}}>查看誰邀請誰、邀請碼與獎勵明細</div>
+        </div>
+        <button onClick={loadAllInvites} disabled={invitesLoading} style={{border:`1px solid ${C.border}`,background:C.white,borderRadius:6,padding:'7px 14px',cursor:'pointer',fontSize:12,fontWeight:700,color:C.navy}}>
+          {invitesLoading?'載入中...':'🔄 載入邀請紀錄'}
+        </button>
+      </div>
+      {allInvites.length===0
+        ?<div style={{textAlign:'center',padding:'24px',background:C.panelAlt,borderRadius:10,color:C.muted,fontSize:13}}>點擊「載入邀請紀錄」查看所有邀請關係</div>
+        :<div style={{overflowX:'auto'}}>
+          <table style={{width:'100%',borderCollapse:'collapse',minWidth:600}}>
+            <thead>
+              <tr>{['邀請人 UID','被邀請人 Email','邀請碼','邀請人獲得','時間'].map(h=>(
+                <th key={h} style={{textAlign:'left',fontSize:11,color:C.muted,padding:'8px 12px',borderBottom:`1px solid ${C.border}`,fontWeight:700}}>{h}</th>
+              ))}</tr>
+            </thead>
+            <tbody>
+              {allInvites.map((inv,i)=>(
+                <tr key={inv.id||i} style={{background:i%2===0?'transparent':C.panelAlt}}>
+                  <td style={{padding:'8px 12px',fontSize:11,fontFamily:'monospace',color:C.navy}}>{inv.inviterUid?.slice(0,14)}…</td>
+                  <td style={{padding:'8px 12px',fontSize:12,color:C.dark}}>{inv.inviteeEmail||'—'}</td>
+                  <td style={{padding:'8px 12px',fontSize:12,fontFamily:'monospace',color:'#7C3AED',fontWeight:700}}>{inv.inviteCode||'—'}</td>
+                  <td style={{padding:'8px 12px',fontSize:13,color:C.win,fontWeight:900}}>+{inv.inviterUnlocks||2} 場</td>
+                  <td style={{padding:'8px 12px',fontSize:11,color:C.muted}}>{inv.createdAt?.toDate?.()?.toLocaleString('zh-TW')||'—'}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      }
+    </Card>
+  </div>;
 
   const renderAds=()=> <Card><div style={{fontSize:16,fontWeight:950,marginBottom:8}}>廣告管理</div><p style={{fontSize:13,color:C.muted,lineHeight:1.7}}>先支援自售廣告與贊助版位；未來可把 AdSense / Ad Manager script 填入對應版位。</p><div style={{display:'grid',gap:12}}>{ads.map((ad,i)=><div key={ad.id||i} style={{border:`1px solid ${C.border}`,borderRadius:10,padding:14}}><div style={{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:10}}><b>版位 #{i+1}</b><button onClick={()=>setAds(a=>a.filter((_,idx)=>idx!==i))}>刪除</button></div><div style={{display:'grid',gridTemplateColumns:'repeat(auto-fit,minmax(160px,1fr))',gap:10}}>{['id','placement','title','description','sponsorName','imageUrl','linkUrl','priority'].map(k=><Field key={k} label={k}><input value={ad[k]??''} type={k==='priority'?'number':'text'} onChange={e=>setAds(list=>list.map((x,idx)=>idx===i?{...x,[k]:k==='priority'?+e.target.value:e.target.value}:x))} style={input}/></Field>)}<Field label="type"><select value={ad.type||'banner'} onChange={e=>setAds(list=>list.map((x,idx)=>idx===i?{...x,type:e.target.value}:x))} style={input}><option>banner</option><option>native</option><option>rewarded</option></select></Field><label style={{display:'flex',alignItems:'center',gap:8,fontSize:13}}><input type="checkbox" checked={!!ad.enabled} onChange={e=>setAds(list=>list.map((x,idx)=>idx===i?{...x,enabled:e.target.checked}:x))}/>啟用</label></div></div>)}</div><button onClick={()=>setAds(a=>[...a,{...DEFAULT_AD,id:`ad_${Date.now()}`}])} style={{marginTop:12,marginRight:8}}>新增版位</button><button onClick={()=>savePatch({ads},'廣告版位已儲存')} style={{background:C.navy,color:C.white,border:'none',borderRadius:8,padding:'10px 18px',fontWeight:850}}>儲存廣告</button></Card>;
 
