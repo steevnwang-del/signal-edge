@@ -1,12 +1,16 @@
-// Firebase 初始化（前端）
-// VITE_FIREBASE_* 是 Firebase Web App config，允許在前端使用。
-// 不要把 Gemini / Groq / Odds / Stripe secret key 放到 VITE_ 變數。
+// Centralized Firebase client init.
+// This file never throws at import time; if env is missing, db/auth become null and callers can fallback gracefully.
 
 import { initializeApp, getApps } from 'firebase/app';
-import { getAuth } from 'firebase/auth';
 import { getFirestore } from 'firebase/firestore';
+import { getAuth } from 'firebase/auth';
 
-const firebaseConfig = {
+let app = null;
+let db = null;
+let auth = null;
+let initError = null;
+
+const cfg = {
   apiKey: import.meta.env.VITE_FIREBASE_API_KEY,
   authDomain: import.meta.env.VITE_FIREBASE_AUTH_DOMAIN,
   projectId: import.meta.env.VITE_FIREBASE_PROJECT_ID,
@@ -15,23 +19,23 @@ const firebaseConfig = {
   appId: import.meta.env.VITE_FIREBASE_APP_ID,
 };
 
-let app = null;
-let auth = null;
-let db = null;
-let firebaseInitError = null;
-
 try {
-  if (!firebaseConfig.apiKey || !firebaseConfig.projectId) {
-    throw new Error('Firebase Web config missing. 請設定所有 VITE_FIREBASE_* 後重新部署。');
+  if (!cfg.apiKey || !cfg.projectId || String(cfg.apiKey).includes('undefined')) {
+    initError = 'Firebase Web config 未設定完整，請確認 Vercel VITE_FIREBASE_* 並重新部署。';
+  } else {
+    app = getApps().length ? getApps()[0] : initializeApp(cfg);
+    db = getFirestore(app);
+    auth = getAuth(app);
   }
-  app = getApps().length ? getApps()[0] : initializeApp(firebaseConfig);
-  auth = getAuth(app);
-  db = getFirestore(app);
 } catch (e) {
-  firebaseInitError = e.message;
-  console.warn('[Firebase] init skipped:', e.message);
+  initError = e.message;
+  console.warn('[Firebase] init failed:', e.message);
 }
 
-export const getFirebaseInitError = () => firebaseInitError;
-export { auth, db };
-export default app;
+export { app, db, auth };
+export const getFirebaseInitError = () => initError;
+export const isFirebaseReady = () => !!app && !!db;
+export const requireDB = () => {
+  if (!db) throw new Error(initError || 'Firebase Firestore 未初始化');
+  return db;
+};

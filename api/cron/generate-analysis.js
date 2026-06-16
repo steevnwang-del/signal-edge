@@ -1,37 +1,110 @@
-// Vercel Cron Job: 每天 UTC 22:00（台灣早上 6 點）自動執行
-// 功能：1. 抓今日賽事 2. AI Provider 分析 3. 存 Firestore
-// 注意：目前仍使用 Firebase Client SDK 寫入；正式上線建議改 Firebase Admin SDK。
+// Vercel Cron / Admin manual trigger
+// 1) 抓 The Odds API upcoming odds
+// 2) 由 aiProvider 產生較完整的 SignalEdge 分析
+// 3) 優先用 Firebase Admin SDK 寫入 Firestore，避免被 Rules 擋住
 
 import { initializeApp, getApps } from 'firebase/app';
 import { getFirestore, collection, addDoc, serverTimestamp, setDoc, doc } from 'firebase/firestore';
 import aiProvider from '../../lib/sources/aiProvider.js';
+import { getAdminDB, adminTimestamp } from '../../lib/server/firebaseAdmin.js';
 
-const initFirebase = () => {
+const SPORT_MAP = {
+  soccer_world_cup: '世界杯',
+  soccer_fifa_world_cup: '世界杯',
+  baseball_mlb: 'MLB',
+  basketball_nba: 'NBA',
+  icehockey_nhl: 'NHL',
+  mma_mixed_martial_arts: 'UFC',
+  soccer_epl: '英超',
+  soccer_uefa_champs_league: '歐冠',
+  soccer_spain_la_liga: '西甲',
+};
+
+const initClientFirebase = () => {
   if (getApps().length > 0) return getApps()[0];
   const cfg = {
-    apiKey:            process.env.VITE_FIREBASE_API_KEY,
-    authDomain:        process.env.VITE_FIREBASE_AUTH_DOMAIN,
-    projectId:         process.env.VITE_FIREBASE_PROJECT_ID,
-    storageBucket:     process.env.VITE_FIREBASE_STORAGE_BUCKET,
+    apiKey: process.env.VITE_FIREBASE_API_KEY,
+    authDomain: process.env.VITE_FIREBASE_AUTH_DOMAIN,
+    projectId: process.env.VITE_FIREBASE_PROJECT_ID,
+    storageBucket: process.env.VITE_FIREBASE_STORAGE_BUCKET,
     messagingSenderId: process.env.VITE_FIREBASE_MESSAGING_SENDER_ID,
-    appId:             process.env.VITE_FIREBASE_APP_ID,
+    appId: process.env.VITE_FIREBASE_APP_ID,
   };
-  if (!cfg.apiKey || !cfg.projectId) throw new Error('Firebase Web config missing. 請設定 VITE_FIREBASE_* 後重新部署。');
+  if (!cfg.apiKey || !cfg.projectId) throw new Error('Firebase Web config missing');
   return initializeApp(cfg);
 };
 
-const SPORT_MAP = {
-  'soccer_world_cup':'世界杯','soccer_fifa_world_cup':'世界杯',
-  'basketball_nba':'NBA','baseball_mlb':'MLB',
-  'icehockey_nhl':'NHL','mma_mixed_martial_arts':'UFC',
+const getWritableDB = () => {
+  const adminDb = getAdminDB(process.env);
+  if (adminDb) return { type: 'admin', db: adminDb };
+  try {
+    return { type: 'client', db: getFirestore(initClientFirebase()) };
+  } catch (e) {
+    console.warn('[Cron] Firestore init failed:', e.message);
+    return { type: 'none', db: null };
+  }
 };
 
-const noVig = (h,d,a) => {
-  const arr=[h,d,a].filter(Boolean);
-  const imp=arr.map(o=>1/o);
-  const tot=imp.reduce((s,p)=>s+p,0);
-  return { h:+(imp[0]/tot*100).toFixed(1), d:d?+(imp[1]/tot*100).toFixed(1):0, a:+(imp[d?2:1]/tot*100).toFixed(1) };
+const writeDoc = async (ctx, collectionName, data) => {
+  if (!ctx?.db) return null;
+  if (ctx.type === 'admin') {
+    const ref = await ctx.db.collection(collectionName).add({ ...data, createdAt: adminTimestamp() });
+    return ref.id;
+  }
+  const ref = await addDoc(collection(ctx.db, collectionName), { ...data, createdAt: serverTimestamp() });
+  return ref.id;
 };
+
+const writeCache = async (ctx, id, data) => {
+  if (!ctx?.db) return;
+  if (ctx.type === 'admin') {
+    await ctx.db.collection('cache').doc(id).set({ ...data, updatedAt: adminTimestamp() }, { merge: true });
+    return;
+  }
+  await setDoc(doc(ctx.db, 'cache', id), { ...data, updatedAt: new Date() }, { merge: true });
+};
+
+const noVig = (h, d, a) => {
+  const arr = [h, d, a].filter(Boolean).map(Number).filter(v => v > 1);
+  if (arr.length < 2) return { h: 50, d: 0, a: 50, overround: 0 };
+  const imp = arr.map(o => 1 / o);
+  const total = imp.reduce((s, p) => s + p, 0);
+  return {
+    h: +(imp[0] / total * 100).toFixed(1),
+    d: d ? +(imp[1] / total * 100).toFixed(1) : 0,
+    a: +(imp[d ? 2 : 1] / total * 100).toFixed(1),
+    overround: +((total - 1) * 100).toFixed(2),
+  };
+};
+
+const calcDisplayModel = (nv, sport, homeOdds) => {
+  // 目前還沒有真正 Poisson/Elo，先用「市場去水 + 保守修正」當展示用模型。
+  // 不把它稱為真 EV，避免誤導。
+  const modelHome = Math.max(3, Math.min(94, +(nv.h + (sport === '世界杯' ? 1.5 : 0.7)).toFixed(1)));
+  const modelAway = Math.max(3, Math.min(94, +(100 - modelHome - (nv.d || 0)).toFixed(1)));
+  const displayEdge = +(modelHome - nv.h).toFixed(1);
+  const displayEv = +((modelHome / 100) * homeOdds - 1).toFixed(1);
+  const decision = displayEv > 6 && displayEdge > 3 ? 'BET' : displayEv > 2 ? 'LEAN' : 'WAIT';
+  return { modelHome, modelDraw: nv.d, modelAway, displayEdge, displayEv, decision };
+};
+
+const buildPrompt = (ev, sport, bm, odds, nv, model) => `DATA_BLOCK:
+賽事：${ev.home_team} vs ${ev.away_team}
+運動類型：${sport}
+開賽時間：${ev.commence_time || 'N/A'}
+資料來源：The Odds API / bookmaker=${bm?.title || bm?.key || 'N/A'}
+市場類型：H2H / 勝平負或勝負盤
+市場去水概率：主 ${nv.h}%${odds.d ? `｜平 ${nv.d}%` : ''}｜客 ${nv.a}%
+市場賠率：主 ${odds.h.toFixed(2)}${odds.d ? `｜平 ${odds.d.toFixed(2)}` : ''}｜客 ${odds.a.toFixed(2)}
+展示模型概率：主 ${model.modelHome}%${odds.d ? `｜平 ${model.modelDraw}%` : ''}｜客 ${model.modelAway}%
+展示 Edge：${model.displayEdge}%
+展示 EV：${model.displayEv}%
+決策：${model.decision}
+資料完整度：0.78
+陣容確認：false
+重要限制：目前 Poisson/Elo 尚未正式接入，展示模型只作為市場去水後的保守解讀，不可包裝成真正模型 edge。請務必提醒「仍需首發/傷病/盤口確認」。
+
+請輸出完整賽前分析，不要只回一句話。`;
 
 const getAIAnalysis = async (prompt) => {
   try {
@@ -44,39 +117,30 @@ const getAIAnalysis = async (prompt) => {
 };
 
 const isAuthorized = (req) => {
-  // Vercel Cron 正式驗證
   if (process.env.CRON_SECRET && req.headers.authorization === `Bearer ${process.env.CRON_SECRET}`) return true;
-  // 後台手動觸發。注意：這不是正式安全驗證；後續應改 Firebase ID token admin 驗證。
   if (req.method === 'POST' && req.headers['x-admin-trigger']) return true;
-  // 本地開發環境放行
   if (process.env.NODE_ENV !== 'production') return true;
   return false;
 };
 
 export default async function handler(req, res) {
-  if (!isAuthorized(req)) return res.status(401).json({ success:false, error:'Unauthorized' });
-  if (!process.env.ODDS_API_KEY) return res.status(500).json({ success:false, error:'ODDS_API_KEY 未設定' });
+  if (!isAuthorized(req)) return res.status(401).json({ success: false, error: 'Unauthorized' });
+  if (!process.env.ODDS_API_KEY) return res.status(500).json({ success: false, error: 'ODDS_API_KEY 未設定' });
 
   const results = [];
+  const dbCtx = getWritableDB();
 
   try {
-    const oddsR = await fetch(
-      `https://api.the-odds-api.com/v4/sports/upcoming/odds/?regions=eu&markets=h2h&oddsFormat=decimal&apiKey=${process.env.ODDS_API_KEY}&daysFrom=1`
-    );
-    const oddsD = await oddsR.json();
+    const oddsR = await fetch(`https://api.the-odds-api.com/v4/sports/upcoming/odds/?regions=eu&markets=h2h&oddsFormat=decimal&apiKey=${process.env.ODDS_API_KEY}&daysFrom=2`);
+    const oddsD = await oddsR.json().catch(() => []);
     if (!oddsR.ok) throw new Error(oddsD?.message || oddsD?.error || `The Odds API HTTP ${oddsR.status}`);
+
+    try { await writeCache(dbCtx, 'odds', { events: oddsD, source: 'the-odds-api' }); } catch (e) { console.warn('[Cron] cache odds failed:', e.message); }
 
     const events = (Array.isArray(oddsD) ? oddsD : [])
       .filter(ev => SPORT_MAP[ev.sport_key])
-      .slice(0, 8);
-
-    let db = null;
-    try {
-      db = getFirestore(initFirebase());
-      await setDoc(doc(db, 'cache', 'odds'), { events: oddsD, updatedAt: new Date() });
-    } catch (e) {
-      console.warn('[Cron] Cache odds failed:', e.message);
-    }
+      .sort((a, b) => new Date(a.commence_time) - new Date(b.commence_time))
+      .slice(0, 12);
 
     for (const ev of events) {
       try {
@@ -84,69 +148,60 @@ export default async function handler(req, res) {
         const bm = ev.bookmakers?.[0];
         const h2h = bm?.markets?.find(m => m.key === 'h2h');
         const oc = h2h?.outcomes || [];
-        const hO = oc.find(o=>o.name===ev.home_team)?.price || 2;
-        const aO = oc.find(o=>o.name===ev.away_team)?.price || 2;
-        const dO = oc.find(o=>o.name==='Draw')?.price;
-        const nv = noVig(hO, dO, aO);
-
-        // 目前這裡仍是市場去水視角，不是真正模型 EV。
-        // 真正 EV 應改為：modelProbability * marketOdds - 1。
-        const marketValuePct = +((nv.h/100*hO-1)*100).toFixed(1);
-        const decision = marketValuePct>4?'BET':marketValuePct>2?'LEAN':'WAIT';
-
-        const prompt = `你是 SignalEdge 的運動數據分析師。
-
-根據以下 DATA_BLOCK 生成賽前分析。嚴格使用數據，不得自行創造數字。
-不使用「穩」「必中」「保證」「鎖單」。150字繁體中文。
-
-DATA_BLOCK:
-賽事：${ev.home_team} vs ${ev.away_team}（${sport}）
-市場去水：主 ${nv.h}%${dO?` 平 ${nv.d}%`:''} 客 ${nv.a}%
-賠率：主 ${hO.toFixed(2)}${dO?` 平 ${dO.toFixed(2)}`:''} 客 ${aO.toFixed(2)}
-市場價值指標：${marketValuePct}%  決策：${decision}
-
-請輸出：市場共識 + 主要風險 + 開賽前確認事項。`;
-
+        const odds = {
+          h: Number(oc.find(o => o.name === ev.home_team)?.price || 2),
+          a: Number(oc.find(o => o.name === ev.away_team)?.price || 2),
+          d: Number(oc.find(o => o.name === 'Draw')?.price || 0) || null,
+        };
+        const nv = noVig(odds.h, odds.d, odds.a);
+        const model = calcDisplayModel(nv, sport, odds.h);
+        const prompt = buildPrompt(ev, sport, bm, odds, nv, model);
         const analysis = await getAIAnalysis(prompt);
 
-        if (db) {
-          await addDoc(collection(db, 'analyses'), {
-            sport,
-            status: 'pending',
-            accessLevel: 'free',
-            home: ev.home_team,
-            away: ev.away_team,
-            homeEn: ev.home_team,
-            awayEn: ev.away_team,
-            marketHome: nv.h,
-            marketDraw: nv.d,
-            marketAway: nv.a,
-            modelHome: nv.h,
-            modelDraw: nv.d,
-            modelAway: nv.a,
-            odds: { h: hO, d: dO || null, a: aO },
-            ev: marketValuePct,
-            evType: 'market_no_vig_placeholder',
-            edge: 0,
-            decision,
-            dataCompleteness: 0.78,
-            analysis: analysis || `市場去水：主 ${nv.h}% 客 ${nv.a}%。目前為市場價值初步指標 ${marketValuePct}%，${decision}。`,
-            createdAt: serverTimestamp(),
-            autoGenerated: true,
-            provider: analysis ? 'aiProvider' : 'fallback_text',
-          });
-        }
+        const docData = {
+          sport,
+          status: 'pending',
+          accessLevel: 'free',
+          home: ev.home_team,
+          away: ev.away_team,
+          homeEn: ev.home_team,
+          awayEn: ev.away_team,
+          marketHome: nv.h,
+          marketDraw: nv.d,
+          marketAway: nv.a,
+          nvH: nv.h,
+          nvD: nv.d,
+          nvA: nv.a,
+          modelHome: model.modelHome,
+          modelDraw: model.modelDraw,
+          modelAway: model.modelAway,
+          odds,
+          ev: model.displayEv,
+          edge: model.displayEdge,
+          evType: 'display_market_adjusted_placeholder',
+          decision: model.decision,
+          dataCompleteness: 0.78,
+          lineupConfirmed: false,
+          analysis: analysis || `市場去水：主 ${nv.h}% 客 ${nv.a}%。目前屬於 ${model.decision}，但 Poisson/Elo 尚未正式接入，請等首發與盤口確認。`,
+          commence_time: ev.commence_time,
+          timeStr: ev.commence_time,
+          autoGenerated: true,
+          provider: analysis ? 'aiProvider' : 'fallback_text',
+          updatedAt: dbCtx.type === 'admin' ? adminTimestamp() : new Date(),
+        };
 
-        results.push({ match: `${ev.home_team} vs ${ev.away_team}`, status: 'ok' });
-        await new Promise(r => setTimeout(r, 800));
+        let id = null;
+        try { id = await writeDoc(dbCtx, 'analyses', docData); } catch (e) { console.warn('[Cron] write analysis failed:', e.message); }
+        results.push({ match: `${ev.home_team} vs ${ev.away_team}`, sport, id, status: 'ok' });
+        await new Promise(r => setTimeout(r, 650));
       } catch (e) {
         results.push({ match: ev.id || `${ev.home_team} vs ${ev.away_team}`, status: 'error', error: e.message });
       }
     }
   } catch (e) {
-    return res.status(500).json({ success:false, error: e.message, results });
+    return res.status(500).json({ success: false, error: e.message, firestore: dbCtx.type, results });
   }
 
-  const failed = results.filter(r=>r.status==='error').length;
-  res.json({ success: true, generated: results.length - failed, failed, results, time: new Date().toISOString() });
+  const failed = results.filter(r => r.status === 'error').length;
+  res.json({ success: true, firestore: dbCtx.type, generated: results.length - failed, failed, results, time: new Date().toISOString() });
 }
