@@ -61,7 +61,6 @@ export const setCachedNews = async (data) => setCacheDoc('news', data);
 export const getTodayDashboard = async () => getCacheDoc('todayDashboard');
 export const setTodayDashboard = async (data) => setCacheDoc('todayDashboard', data);
 
-
 export const getCacheDoc = async (id) => {
   try { const s = await getDoc(doc(getDB(), 'cache', id)); return s.exists() ? s.data() : null; }
   catch (e) { warn(`getCacheDoc:${id}`, e); return null; }
@@ -90,8 +89,6 @@ export const getApiUsage = async ({ period = 'day', limitN = 60 } = {}) => {
     const s = await getDocs(q);
     return s.docs.map(d => ({ id: d.id, ...d.data() }));
   } catch (e) {
-    // Some admins may not have refreshed Firestore rules or owner custom document yet.
-    // Avoid noisy console spam; the Admin UI will show an empty state instead.
     if (!/permission|PERMISSION/i.test(e?.message || '')) warn('getApiUsage', e);
     return [];
   }
@@ -101,11 +98,104 @@ export const recordClientEvent = async (name, data = {}) => {
   try {
     const id = `${new Date().toISOString().slice(0,10)}_${name}`;
     await setDoc(doc(getDB(), 'clientEventsDaily', id), {
-      event: name,
-      count: increment(1),
-      sample: data,
-      updatedAt: serverTimestamp(),
+      event: name, count: increment(1), sample: data, updatedAt: serverTimestamp(),
     }, { merge: true });
     return true;
   } catch (e) { warn('recordClientEvent', e); return false; }
+};
+
+// ─── 邀請系統 ────────────────────────────────────────────────────────────────
+
+// 用 uid 產生穩定邀請碼
+export const generateInviteCode = (uid = '') => {
+  let n = 0;
+  for (const ch of uid) n = (n * 31 + ch.charCodeAt(0)) % 999999;
+  return `SE-${String(n).padStart(6, '0')}`;
+};
+
+// 記錄邀請關係（被邀請者登入時呼叫）
+export const recordInvite = async ({ inviteCode, inviteeUid, inviteeEmail, rules = {} }) => {
+  try {
+    const db = getDB();
+    // 找邀請人
+    const q = query(collection(db, 'users'), where('inviteCode', '==', inviteCode), fsLimit(1));
+    const snap = await getDocs(q);
+    if (snap.empty) return { success: false, error: '邀請碼不存在' };
+
+    const inviterDoc = snap.docs[0];
+    const inviterUid = inviterDoc.id;
+    if (inviterUid === inviteeUid) return { success: false, error: '不能邀請自己' };
+
+    // 檢查是否已被邀請過
+    const inviteeSnap = await getDoc(doc(db, 'users', inviteeUid));
+    if (inviteeSnap.exists() && inviteeSnap.data().invitedBy) {
+      return { success: false, error: '已使用過邀請碼' };
+    }
+
+    const now = serverTimestamp();
+    const inviterUnlocks = rules.inviterUnlocks || 2;
+    const inviteeUnlocks = rules.inviteeUnlocks || 1;
+
+    // 寫入邀請紀錄
+    await addDoc(collection(db, 'invites'), {
+      inviteCode, inviterUid, inviteeUid, inviteeEmail: inviteeEmail || '',
+      inviterUnlocks, inviteeUnlocks,
+      createdAt: now, status: 'active',
+    });
+
+    // 更新邀請人：累計邀請數 + 解鎖額度
+    await updateDoc(doc(db, 'users', inviterUid), {
+      inviteCount: increment(1),
+      bonusUnlocks: increment(inviterUnlocks),
+      updatedAt: now,
+    });
+
+    // 更新被邀請人：記錄邀請人 + 解鎖額度
+    await updateDoc(doc(db, 'users', inviteeUid), {
+      invitedBy: inviterUid,
+      invitedByCode: inviteCode,
+      bonusUnlocks: increment(inviteeUnlocks),
+      updatedAt: now,
+    });
+
+    return {
+      success: true,
+      inviterUid,
+      inviterUnlocks,
+      inviteeUnlocks,
+      inviterEmail: inviterDoc.data().email || '',
+    };
+  } catch (e) { warn('recordInvite', e); return { success: false, error: e.message }; }
+};
+
+// 取得某用戶的邀請列表（誰被他邀請）
+export const getMyInvites = async (inviterUid, { limitN = 50 } = {}) => {
+  try {
+    const q = query(
+      collection(getDB(), 'invites'),
+      where('inviterUid', '==', inviterUid),
+      orderBy('createdAt', 'desc'),
+      fsLimit(limitN)
+    );
+    const s = await getDocs(q);
+    return s.docs.map(d => ({ id: d.id, ...d.data() }));
+  } catch (e) { warn('getMyInvites', e); return []; }
+};
+
+// 取得所有邀請紀錄（Admin 用）
+export const getAllInvites = async ({ limitN = 200 } = {}) => {
+  try {
+    const q = query(collection(getDB(), 'invites'), orderBy('createdAt', 'desc'), fsLimit(limitN));
+    const s = await getDocs(q);
+    return s.docs.map(d => ({ id: d.id, ...d.data() }));
+  } catch (e) { warn('getAllInvites', e); return []; }
+};
+
+// 確保用戶有 inviteCode 欄位
+export const ensureInviteCode = async (uid) => {
+  try {
+    const code = generateInviteCode(uid);
+    await setDoc(doc(getDB(), 'users', uid), { inviteCode: code }, { merge: true });
+    return code;
+  } catch (e) { warn('ensureInviteCode', e); return generateInviteCode(uid); }
 };
