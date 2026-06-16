@@ -115,7 +115,136 @@ export default function AdminPanel({signals,setPreviewRole,setPage,siteSettings,
     </Card>
   </div>;
 
-  const renderAds=()=> <Card><div style={{fontSize:16,fontWeight:950,marginBottom:8}}>廣告管理</div><p style={{fontSize:13,color:C.muted,lineHeight:1.7}}>先支援自售廣告與贊助版位；未來可把 AdSense / Ad Manager script 填入對應版位。</p><div style={{display:'grid',gap:12}}>{ads.map((ad,i)=><div key={ad.id||i} style={{border:`1px solid ${C.border}`,borderRadius:10,padding:14}}><div style={{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:10}}><b>版位 #{i+1}</b><button onClick={()=>setAds(a=>a.filter((_,idx)=>idx!==i))}>刪除</button></div><div style={{display:'grid',gridTemplateColumns:'repeat(auto-fit,minmax(160px,1fr))',gap:10}}>{['id','placement','title','description','sponsorName','imageUrl','linkUrl','priority'].map(k=><Field key={k} label={k}><input value={ad[k]??''} type={k==='priority'?'number':'text'} onChange={e=>setAds(list=>list.map((x,idx)=>idx===i?{...x,[k]:k==='priority'?+e.target.value:e.target.value}:x))} style={input}/></Field>)}<Field label="type"><select value={ad.type||'banner'} onChange={e=>setAds(list=>list.map((x,idx)=>idx===i?{...x,type:e.target.value}:x))} style={input}><option>banner</option><option>native</option><option>rewarded</option></select></Field><label style={{display:'flex',alignItems:'center',gap:8,fontSize:13}}><input type="checkbox" checked={!!ad.enabled} onChange={e=>setAds(list=>list.map((x,idx)=>idx===i?{...x,enabled:e.target.checked}:x))}/>啟用</label></div></div>)}</div><button onClick={()=>setAds(a=>[...a,{...DEFAULT_AD,id:`ad_${Date.now()}`}])} style={{marginTop:12,marginRight:8}}>新增版位</button><button onClick={()=>savePatch({ads},'廣告版位已儲存')} style={{background:C.navy,color:C.white,border:'none',borderRadius:8,padding:'10px 18px',fontWeight:850}}>儲存廣告</button></Card>;
+  const PLACEMENT_LABELS = {
+    home_top: '首頁橫幅（Hero 下方）',
+    home_feed: '首頁內容流（台彩試算器旁）',
+    dashboard_top: '賽事分析頁頂部',
+    news_top: '新聞頁頂部',
+    sidebar: '側邊欄',
+  };
+
+  const renderAds=()=><div style={{display:'grid',gap:16}}>
+    <Card>
+      <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:12}}>
+        <div>
+          <div style={{fontSize:16,fontWeight:950,color:C.dark}}>廣告版位管理</div>
+          <div style={{fontSize:12,color:C.muted,marginTop:2}}>設定後儲存，前台即時生效。圖片建議比例 3:1（橫幅）或 1:1（方形）。</div>
+        </div>
+        <button onClick={()=>setAds(a=>[...a,{...DEFAULT_AD,id:`ad_${Date.now()}`,placement:'home_feed'}])}
+          style={{background:C.navy,color:C.white,border:'none',borderRadius:8,padding:'8px 14px',cursor:'pointer',fontSize:12,fontWeight:700}}>
+          ＋ 新增版位
+        </button>
+      </div>
+
+      {ads.map((ad,i)=>(
+        <div key={ad.id||i} style={{border:`2px solid ${ad.enabled?C.win:C.border}`,borderRadius:12,padding:18,marginBottom:12,position:'relative'}}>
+          {/* 版位標題列 */}
+          <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:14}}>
+            <div style={{display:'flex',gap:10,alignItems:'center'}}>
+              <label style={{display:'flex',alignItems:'center',gap:6,cursor:'pointer'}}>
+                <input type="checkbox" checked={!!ad.enabled}
+                  onChange={e=>setAds(list=>list.map((x,idx)=>idx===i?{...x,enabled:e.target.checked}:x))}
+                  style={{width:16,height:16}}/>
+                <span style={{fontSize:13,fontWeight:700,color:ad.enabled?C.win:C.muted}}>
+                  {ad.enabled?'● 已啟用':'○ 已停用'}
+                </span>
+              </label>
+            </div>
+            <button onClick={()=>setAds(a=>a.filter((_,idx)=>idx!==i))}
+              style={{background:'#FEF2F2',color:C.loss,border:'1px solid #FECACA',borderRadius:6,padding:'4px 10px',cursor:'pointer',fontSize:11,fontWeight:700}}>
+              刪除
+            </button>
+          </div>
+
+          <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:12,marginBottom:12}}>
+            {/* 左欄：基本資訊 */}
+            <div style={{display:'grid',gap:10}}>
+              <Field label="版位位置">
+                <select value={ad.placement||'home_top'}
+                  onChange={e=>setAds(list=>list.map((x,idx)=>idx===i?{...x,placement:e.target.value}:x))}
+                  style={input}>
+                  {Object.entries(PLACEMENT_LABELS).map(([v,l])=><option key={v} value={v}>{l}</option>)}
+                </select>
+              </Field>
+              <Field label="廣告類型">
+                <select value={ad.type||'banner'}
+                  onChange={e=>setAds(list=>list.map((x,idx)=>idx===i?{...x,type:e.target.value}:x))}
+                  style={input}>
+                  <option value="banner">橫幅廣告</option>
+                  <option value="native">原生廣告</option>
+                  <option value="sponsor">贊助內容</option>
+                </select>
+              </Field>
+              <Field label="贊助商名稱">
+                <input value={ad.sponsorName||''} placeholder="例：世界杯官方合作夥伴"
+                  onChange={e=>setAds(list=>list.map((x,idx)=>idx===i?{...x,sponsorName:e.target.value}:x))}
+                  style={input}/>
+              </Field>
+              <Field label="廣告標題">
+                <input value={ad.title||''} placeholder="例：2026 世界杯限定優惠"
+                  onChange={e=>setAds(list=>list.map((x,idx)=>idx===i?{...x,title:e.target.value}:x))}
+                  style={input}/>
+              </Field>
+              <Field label="廣告說明文字">
+                <input value={ad.description||''} placeholder="例：立即訂閱享早鳥優惠"
+                  onChange={e=>setAds(list=>list.map((x,idx)=>idx===i?{...x,description:e.target.value}:x))}
+                  style={input}/>
+              </Field>
+              <Field label="點擊連結 URL">
+                <input value={ad.linkUrl||''} placeholder="https://..."
+                  onChange={e=>setAds(list=>list.map((x,idx)=>idx===i?{...x,linkUrl:e.target.value}:x))}
+                  style={input}/>
+              </Field>
+            </div>
+
+            {/* 右欄：圖片設定 + 預覽 */}
+            <div style={{display:'grid',gap:10}}>
+              <Field label="圖片 URL">
+                <input value={ad.imageUrl||''} placeholder="https://... （建議 600x200px）"
+                  onChange={e=>setAds(list=>list.map((x,idx)=>idx===i?{...x,imageUrl:e.target.value}:x))}
+                  style={input}/>
+              </Field>
+              {/* 圖片預覽 */}
+              <div style={{background:C.panelAlt,border:`1px solid ${C.border}`,borderRadius:8,padding:8,minHeight:80,display:'flex',alignItems:'center',justifyContent:'center'}}>
+                {ad.imageUrl
+                  ? <img src={ad.imageUrl} alt="預覽" style={{maxWidth:'100%',maxHeight:120,objectFit:'contain',borderRadius:6}}
+                      onError={e=>{e.target.style.display='none';}}/>
+                  : <div style={{fontSize:12,color:C.muted,textAlign:'center'}}>圖片預覽<br/>填入 URL 後顯示</div>
+                }
+              </div>
+              {/* 廣告預覽 */}
+              <div style={{background:C.panelAlt,border:`1px dashed ${C.border}`,borderRadius:8,padding:10}}>
+                <div style={{fontSize:10,color:C.muted,marginBottom:6,fontWeight:700}}>前台預覽效果</div>
+                <div style={{background:C.white,border:`1px solid ${C.border}`,borderRadius:8,padding:'10px 12px',display:'flex',gap:10,alignItems:'center'}}>
+                  {ad.imageUrl&&<div style={{width:60,height:36,background:'#eee',borderRadius:4,backgroundImage:`url(${ad.imageUrl})`,backgroundSize:'cover',flexShrink:0}}/>}
+                  <div>
+                    <div style={{fontSize:9,color:C.amber,fontWeight:900,letterSpacing:1}}>贊助內容</div>
+                    <div style={{fontSize:12,fontWeight:700,color:C.dark}}>{ad.title||ad.sponsorName||'廣告標題'}</div>
+                    <div style={{fontSize:10,color:C.muted}}>{ad.description||'廣告說明文字'}</div>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <div style={{fontSize:11,color:C.muted}}>
+            版位 ID：<code>{ad.id||`ad_${i}`}</code> · 位置：{PLACEMENT_LABELS[ad.placement]||ad.placement}
+          </div>
+        </div>
+      ))}
+
+      {ads.length===0&&(
+        <div style={{textAlign:'center',padding:28,color:C.muted,fontSize:13}}>
+          還沒有廣告版位。點「新增版位」開始設定。
+        </div>
+      )}
+
+      <button onClick={()=>savePatch({ads},'廣告版位已儲存 ✅')}
+        style={{background:C.win,color:C.white,border:'none',borderRadius:8,padding:'11px 24px',fontWeight:900,cursor:'pointer',fontSize:13,marginTop:4}}>
+        💾 儲存所有廣告設定
+      </button>
+    </Card>
+  </div>;
 
   const renderContent=()=> <Card><div style={{fontSize:16,fontWeight:950,marginBottom:12}}>內容設定</div><Field label="跑馬燈文字"><input value={content.marqueeText} onChange={e=>setContent(p=>({...p,marqueeText:e.target.value}))} style={input}/></Field><div style={{display:'flex',gap:18,marginTop:12,flexWrap:'wrap'}}><label><input type="checkbox" checked={content.marqueeEnabled} onChange={e=>setContent(p=>({...p,marqueeEnabled:e.target.checked}))}/> 啟用跑馬燈</label><label><input type="checkbox" checked={content.playerSearchEnabled} onChange={e=>setContent(p=>({...p,playerSearchEnabled:e.target.checked}))}/> 啟用選手搜尋入口</label></div><button onClick={()=>savePatch(content,'內容設定已儲存')} style={{marginTop:14,background:C.navy,color:C.white,border:'none',borderRadius:8,padding:'10px 18px',fontWeight:850}}>儲存內容</button></Card>;
 
