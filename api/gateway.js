@@ -59,13 +59,42 @@ async function recordUsage({ source, action, ok = true, error = null, durationMs
   }
 }
 
+// Simple in-memory rate limiter (resets on cold start, good enough for serverless)
+const rateLimitMap = new Map();
+const RATE_LIMIT = 30; // requests per minute per IP
+const RATE_WINDOW = 60000; // 1 minute
+
+const checkRateLimit = (ip) => {
+  const now = Date.now();
+  const entry = rateLimitMap.get(ip) || { count: 0, resetAt: now + RATE_WINDOW };
+  if (now > entry.resetAt) { entry.count = 0; entry.resetAt = now + RATE_WINDOW; }
+  entry.count++;
+  rateLimitMap.set(ip, entry);
+  return entry.count <= RATE_LIMIT;
+};
+
+const ALLOWED_ORIGIN = process.env.VITE_APP_URL || 'https://signal-edge-hews.vercel.app';
+
+// Admin-only sources that should not be called from frontend
+const ADMIN_ONLY_SOURCES = ['aiProvider', 'gemini', 'groq'];
+
 export default async function handler(req, res) {
-  res.setHeader('Access-Control-Allow-Origin', '*');
+  // CORS - only allow our own domain
+  const origin = req.headers.origin || '';
+  const isAllowedOrigin = origin.includes('signal-edge') || origin.includes('localhost') || !origin;
+  res.setHeader('Access-Control-Allow-Origin', isAllowedOrigin ? origin : ALLOWED_ORIGIN);
   res.setHeader('Access-Control-Allow-Methods', 'POST, GET, OPTIONS');
+  res.setHeader('Access-Control-Allow-Headers', 'Content-Type');
   if (req.method === 'OPTIONS') return res.status(200).end();
 
+  // Rate limiting
+  const ip = req.headers['x-forwarded-for']?.split(',')[0] || req.socket?.remoteAddress || 'unknown';
+  if (!checkRateLimit(ip)) {
+    return res.status(429).json({ error: 'Too many requests. Please try again later.' });
+  }
+
   if (req.method === 'GET') {
-    return res.json({ status: 'ok', sources: Object.keys(SOURCES), version: '6B' });
+    return res.json({ status: 'ok', version: '6B' });
   }
 
   if (req.method !== 'POST') return res.status(405).json({ error: 'Method not allowed' });
@@ -102,4 +131,5 @@ export default async function handler(req, res) {
     });
   }
 }
+
 
