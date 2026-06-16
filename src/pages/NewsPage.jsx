@@ -1,9 +1,9 @@
 import { useEffect, useMemo, useState } from 'react';
 
 const C={navy:'#0F3460',white:'#FFFFFF',dark:'#111827',muted:'#6B7280',border:'#D4D8DF',borderLight:'#E9EBF0',bg:'#ECEEF2',amber:'#D97706',panelAlt:'#F6F7FA'};
-const SC={足球:'#1B5E20',世界杯:'#1B5E20',NBA:'#C9082A',MLB:'#002D72',電競:'#7C3AED',UFC:'#D20A0A',綜合:'#0F3460'};
-const SOURCE_LABELS={espn:'ESPN',bbc_sport:'BBC Sport',sky_sports:'Sky Sports',goal:'Goal.com',dot_esports:'Dot Esports',hltv:'HLTV',newsapi:'NewsAPI',fallback:'SignalEdge'};
-const detectSport=(title='')=>/league of legends|\blol\b|msi|worlds|lck|lpl|lec|lcs|valorant|cs2|counter-strike|dota/i.test(title)?'電競':/world cup|fifa|premier league|champions league|soccer|football|transfer/i.test(title)?'足球':/nba|basketball|wnba/i.test(title)?'NBA':/mlb|baseball|yankees|dodgers|mets|phillies/i.test(title)?'MLB':/ufc|mma/i.test(title)?'UFC':'綜合';
+const SC={足球:'#1B5E20',世界杯:'#006400',NBA:'#C9082A',MLB:'#002D72',電競:'#7C3AED',UFC:'#D20A0A',綜合:'#0F3460'};
+const SOURCE_LABELS={espn:'ESPN',bbc_sport:'BBC Sport',sky_sports:'Sky Sports',goal:'Goal.com',yahoo_sports:'Yahoo Sports',yahoo_soccer:'Yahoo Soccer',dot_esports:'Dot Esports',hltv:'HLTV',fifa_news:'FIFA',goal_wc:'Goal WC',udn_sports:'聯合新聞網',ctv_sports:'CTV Sports',newsapi:'NewsAPI',fallback:'SignalEdge'};
+const detectSport=(title='',source='')=>/league of legends|\blol\b|msi|worlds|lck|lpl|lec|lcs|valorant|cs2|counter-strike|dota/i.test(title)?'電競':(['fifa_news','goal_wc'].includes(source)||/world cup 2026|fifa world cup|2026 世界杯/i.test(title))?'世界杯':/world cup|fifa|premier league|champions league|soccer|football|transfer/i.test(title)?'足球':/nba|basketball|wnba/i.test(title)?'NBA':/mlb|baseball|yankees|dodgers|mets|phillies/i.test(title)?'MLB':/ufc|mma/i.test(title)?'UFC':'綜合';
 const timeAgo=(date)=>{try{const d=new Date(date),s=(Date.now()-d.getTime())/1000;if(s<3600)return`${Math.max(1,Math.floor(s/60))} 分鐘前`;if(s<86400)return`${Math.floor(s/3600)} 小時前`;return d.toLocaleDateString('zh-TW');}catch{return'';}};
 const localZhTitle=(title='')=>{
   let t=String(title||'').trim();
@@ -24,7 +24,7 @@ const normalize=(items=[])=>items.filter(a=>a?.title&&a?.url).map((a,i)=>({
   ...a,
   id:a.id||`news-${i}`,
   titleDisplay:a.titleZh||a.titleDisplay||localZhTitle(a.title),
-  sport:a.sport||detectSport(a.title),
+  sport:a.sport||detectSport(a.title,a.source),
   sourceLabel:a.sourceLabel||SOURCE_LABELS[a.source]||a.source||'外媒',
 }));
 
@@ -81,11 +81,29 @@ export default function NewsPage({ role }){
 
   useEffect(()=>{(async()=>{setLoading(true);const ok=await loadCache();if(!ok){setNews(FALLBACK_NEWS);setNotice('新聞快取尚未建立，先顯示重點摘要；請由管理後台更新新聞快取。');}setLoading(false);})();},[]);
 
-  const sports=useMemo(()=>['全部',...Array.from(new Set(news.map(n=>n.sport).filter(Boolean)))],[news]);
+  const sports=useMemo(()=>{
+    const all=Array.from(new Set(news.map(n=>n.sport).filter(Boolean)));
+    // 世界杯永遠排第一（如果有的話）
+    const priority=['世界杯','足球','MLB','NBA','電競','UFC'];
+    const sorted=[...priority.filter(s=>all.includes(s)),...all.filter(s=>!priority.includes(s))];
+    return['全部',...sorted];
+  },[news]);
   const filtered=news.filter(n=>filter==='全部'||n.sport===filter);
 
   return <div style={{background:C.bg,minHeight:'100vh'}}><div style={{maxWidth:1000,margin:'0 auto',padding:'28px 20px'}}>
-    <div style={{marginBottom:22,display:'flex',justifyContent:'space-between',alignItems:'flex-end',gap:12,flexWrap:'wrap'}}>
+    
+        {/* 世界杯專區橫幅 */}
+        {(filter==='全部'||filter==='世界杯')&&news.some(n=>n.sport==='世界杯')&&(
+          <div style={{background:'linear-gradient(135deg,#006400,#1B5E20)',borderRadius:14,padding:'16px 20px',marginBottom:16,display:'flex',alignItems:'center',gap:16,flexWrap:'wrap'}}>
+            <div style={{fontSize:28}}>🏆</div>
+            <div>
+              <div style={{fontSize:15,fontWeight:950,color:'#fff',marginBottom:2}}>2026 FIFA 世界杯專區</div>
+              <div style={{fontSize:12,color:'rgba(255,255,255,0.75)'}}>最新世界杯賽事報導、戰術分析與賽程資訊</div>
+            </div>
+            <button onClick={()=>setFilter('世界杯')} style={{marginLeft:'auto',background:'rgba(255,255,255,0.2)',border:'1px solid rgba(255,255,255,0.4)',color:'#fff',padding:'7px 16px',borderRadius:8,cursor:'pointer',fontSize:12,fontWeight:700}}>只看世界杯 →</button>
+          </div>
+        )}
+        <div style={{marginBottom:22,display:'flex',justifyContent:'space-between',alignItems:'flex-end',gap:12,flexWrap:'wrap'}}>
       <div><div style={{fontSize:11,fontWeight:700,letterSpacing:1.5,color:C.amber,marginBottom:6,textTransform:'uppercase'}}>即時新聞</div><h2 style={{fontSize:26,fontWeight:900,color:C.dark,margin:'0 0 4px'}}>國際媒體速報</h2><p style={{color:C.muted,fontSize:13,margin:0}}>每日整理主要體育媒體重點新聞，點擊可開啟原文。</p></div>
       <div style={{display:'flex',gap:8}}><button onClick={loadCache} disabled={refreshing} style={{padding:'8px 12px',border:`1px solid ${C.border}`,borderRadius:7,background:C.white,cursor:'pointer',fontWeight:700,color:C.navy,fontSize:12}}>重新整理</button>{isAdmin&&<button onClick={adminRefreshCache} disabled={refreshing} style={{padding:'8px 12px',border:'none',borderRadius:7,background:C.navy,color:C.white,cursor:'pointer',fontWeight:700,fontSize:12}}>更新快取</button>}</div>
     </div>
@@ -100,3 +118,4 @@ export default function NewsPage({ role }){
     <div style={{marginTop:14,padding:'10px',background:'#F6F7FA',border:`1px solid ${C.border}`,borderRadius:8,fontSize:11,color:C.muted,textAlign:'center'}}>新聞內容與版權屬原始媒體所有，SignalEdge 提供標題整理與原文導覽。</div>
   </div></div>;
 }
+
