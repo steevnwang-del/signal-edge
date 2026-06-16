@@ -6,6 +6,84 @@ import { getAdminDB, getAdminInitStatus, adminTimestamp } from '../../lib/server
 import { buildAnalysisFromOddsEvent, buildPromptFromDataBlock, fallbackNarrative, SPORT_MAP } from '../../lib/core/analysisBuilder.js';
 import { taipeiWindow, taipeiDateKey } from '../../lib/core/timeBuckets.js';
 
+// ─── 球隊背景資料（API-Football + football-data.org）───────────────────────
+// 每場比賽嘗試抓近期戰績和傷兵，增厚 DATA_BLOCK 讓 AI 有料可寫
+const WC_TEAM_IDS = {
+  'France': 2, 'Brazil': 6, 'Argentina': 26, 'Spain': 9, 'England': 10,
+  'Germany': 25, 'Portugal': 27, 'Netherlands': 1, 'Morocco': 31,
+  'USA': 2415, 'Mexico': 16, 'Japan': 47, 'Uruguay': 38,
+  'Senegal': 67, 'Croatia': 3, 'Switzerland': 15, 'Poland': 24,
+  'Australia': 97, 'South Korea': 48, 'Saudi Arabia': 116, 'Canada': 107,
+  'Ecuador': 40, 'Ghana': 96, 'Cameroon': 65, 'Serbia': 14,
+  'Denmark': 21, 'Belgium': 4, 'Tunisia': 62, 'Iran': 55,
+  'Qatar': 164, 'Costa Rica': 100, 'Colombia': 39, 'Venezuela': 79,
+  'Panama': 168, 'Chile': 34, 'Paraguay': 37,
+};
+
+const fetchTeamContext = async (homeTeamEn, awayTeamEn, sport, env) => {
+  if (!env.API_SPORTS_KEY) return null;
+  const isSoccer = ['世界杯','英超','歐冠','西甲','德甲','義甲','法甲'].includes(sport);
+  if (!isSoccer) return null;
+
+  try {
+    const homeId = WC_TEAM_IDS[homeTeamEn];
+    const awayId = WC_TEAM_IDS[awayTeamEn];
+    if (!homeId || !awayId) return null;
+
+    const BASE = 'https://v3.football.api-sports.io';
+    const headers = { 'x-apisports-key': env.API_SPORTS_KEY };
+    
+    // Fetch last 5 matches for both teams + H2H (parallel)
+    const [homeFixtures, awayFixtures, h2h] = await Promise.all([
+      fetch(`${BASE}/fixtures?team=${homeId}&last=5&status=FT`, { headers }).then(r => r.json()).catch(() => null),
+      fetch(`${BASE}/fixtures?team=${awayId}&last=5&status=FT`, { headers }).then(r => r.json()).catch(() => null),
+      fetch(`${BASE}/fixtures/headtohead?h2h=${homeId}-${awayId}&last=5`, { headers }).then(r => r.json()).catch(() => null),
+    ]);
+
+    const parseForm = (fixtures, teamId) => {
+      if (!fixtures?.response) return 'N/A';
+      return fixtures.response.slice(0, 5).map(f => {
+        const isHome = f.teams?.home?.id === teamId;
+        const homeGoals = f.goals?.home ?? 0;
+        const awayGoals = f.goals?.away ?? 0;
+        if (isHome) return homeGoals > awayGoals ? 'W' : homeGoals < awayGoals ? 'L' : 'D';
+        return awayGoals > homeGoals ? 'W' : awayGoals < homeGoals ? 'L' : 'D';
+      }).join('');
+    };
+
+    const parseGoals = (fixtures, teamId) => {
+      if (!fixtures?.response) return null;
+      const goals = fixtures.response.map(f => {
+        const isHome = f.teams?.home?.id === teamId;
+        return isHome ? (f.goals?.home ?? 0) : (f.goals?.away ?? 0);
+      });
+      return goals.length ? (goals.reduce((s,g) => s+g, 0) / goals.length).toFixed(1) : null;
+    };
+
+    const parseH2H = (h2h) => {
+      if (!h2h?.response?.length) return null;
+      const matches = h2h.response.slice(0, 5);
+      return matches.map(f => {
+        const h = f.goals?.home ?? 0;
+        const a = f.goals?.away ?? 0;
+        return `${f.teams?.home?.name} ${h}-${a} ${f.teams?.away?.name}`;
+      }).join(' | ');
+    };
+
+    return {
+      homeForm: parseForm(homeFixtures, homeId),
+      awayForm: parseForm(awayFixtures, awayId),
+      homeGoalsAvg: parseGoals(homeFixtures, homeId),
+      awayGoalsAvg: parseGoals(awayFixtures, awayId),
+      h2h: parseH2H(h2h),
+      source: 'api-football',
+    };
+  } catch (e) {
+    console.warn('[fetchTeamContext] failed:', e.message);
+    return null;
+  }
+};
+
 // MSI 2026 static schedule (Riot API key 24h 過期，用靜態資料補充)
 // commence_time 動態計算在 runtime，確保永遠是未來時間
 const getMSIEvents = () => {
@@ -194,8 +272,25 @@ export default async function handler(req, res) {
     
     for (const item of toGenerate) {
       try {
+        // Fetch team context to enrich DATA_BLOCK (only for today's soccer matches)
+        let enrichedDataBlock = item.dataBlock;
+        if (item.bucket === 'today' && ['世界杯','英超','歐冠','西甲'].includes(item.sport)) {
+          const ctx = await fetchTeamContext(item.homeEn || item.home, item.awayEn || item.away, item.sport, process.env);
+          if (ctx) {
+            enrichedDataBlock = {
+              ...item.dataBlock,
+              homeForm: ctx.homeForm,
+              awayForm: ctx.awayForm,
+              homeGoalsAvg: ctx.homeGoalsAvg,
+              awayGoalsAvg: ctx.awayGoalsAvg,
+              h2h: ctx.h2h,
+              contextSource: ctx.source,
+            };
+          }
+        }
+        
         const shouldCallAI = item.bucket === 'today' && aiCallCount < AI_LIMIT;
-        const aiResult = shouldCallAI ? await getAIAnalysis(item.dataBlock, siteSettings) : null;
+        const aiResult = shouldCallAI ? await getAIAnalysis(enrichedDataBlock, siteSettings) : null;
         if (shouldCallAI) aiCallCount++;
         
         const analysisText = aiResult?.analysis || aiResult || null;
