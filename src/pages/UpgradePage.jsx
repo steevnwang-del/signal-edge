@@ -2,7 +2,8 @@ import { useState } from 'react';
 
 const C={navy:'#0F3460',white:'#FFFFFF',dark:'#111827',muted:'#6B7280',border:'#D4D8DF',bg:'#ECEEF2',amber:'#D97706',win:'#059669',loss:'#DC2626'};
 
-const PLANS=[
+// 預設方案（siteSettings.plans 未載入時使用）
+const DEFAULT_PLANS=[
   {id:'monthly',label:'月費方案',price:299,usd:9,period:'/ 月',desc:'每月自動續費，隨時取消',badge:'',color:C.navy},
   {id:'quarterly',label:'季費方案',price:799,usd:24,period:'/ 季（3個月）',desc:'較月費省 10%，一次付清',badge:'最受歡迎',color:'#7C3AED'},
   {id:'worldcup',label:'世界杯全程通',price:399,usd:12,period:'/ 世界杯全程',desc:'一次付清，全程 VIP 分析',badge:'限時',color:C.win},
@@ -14,7 +15,22 @@ const CRYPTO_ADDRS={
   'BTC': { addr:'填入你的BTC錢包地址', icon:'₿', note:'比特幣' },
 };
 
-export default function UpgradePage({user,role,setPage}){
+export default function UpgradePage({user,role,setPage,plans:plansProp}){
+  // 從 siteSettings 讀取方案，fallback 用預設
+  const PLANS = plansProp
+    ? Object.entries(plansProp)
+        .filter(([,p]) => p.enabled !== false)
+        .map(([id,p]) => ({
+          id,
+          label: p.name || id,
+          price: p.price || 0,
+          usd: p.usd || 0,
+          period: p.period || '',
+          desc: p.desc || '',
+          badge: id === 'quarterly' ? '最受歡迎' : id === 'worldcup' ? '限時' : '',
+          color: id === 'quarterly' ? '#7C3AED' : id === 'worldcup' ? C.win : C.navy,
+        }))
+    : DEFAULT_PLANS;
   const [plan,setPlan]=useState('monthly');
   const [payMethod,setPayMethod]=useState('stripe');
   const [cryptoCoin,setCryptoCoin]=useState('USDT (TRC20)');
@@ -196,4 +212,5 @@ export default function UpgradePage({user,role,setPage}){
     </div>
   );
 }
+
 

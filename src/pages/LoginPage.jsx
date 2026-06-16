@@ -5,7 +5,7 @@ const C={navy:'#0F3460',white:'#FFFFFF',dark:'#111827',muted:'#6B7280',border:'#
 const iS={width:'100%',padding:'11px 14px',border:`1px solid ${C.border}`,borderRadius:8,fontSize:14,color:C.dark,outline:'none',boxSizing:'border-box',background:C.white,WebkitAppearance:'none'};
 const ERRS={'auth/email-already-in-use':'此 Email 已被使用','auth/user-not-found':'找不到此帳號','auth/wrong-password':'密碼錯誤','auth/invalid-email':'Email 格式不正確','auth/weak-password':'密碼至少需要 6 個字','auth/too-many-requests':'嘗試次數太多','auth/network-request-failed':'網路連線錯誤','auth/invalid-credential':'帳號或密碼錯誤'};
 
-const LINE_CHANNEL_ID = '填入你的LINE_CHANNEL_ID'; // ← 申請後填入
+const LINE_CHANNEL_ID = import.meta.env.VITE_LINE_CHANNEL_ID || ''; // 在 Vercel 設定 VITE_LINE_CHANNEL_ID
 const LINE_REDIRECT_URI = 'https://signal-edge-hews.vercel.app/api/auth/line-callback';
 
 export default function LoginPage({setPage,setRole}){
@@ -35,7 +35,16 @@ export default function LoginPage({setPage,setRole}){
       try{
         const data=JSON.parse(atob(lineToken));
         if(Date.now()<data.exp){
-          // LINE 登入成功，設定用戶狀態
+          // LINE 登入成功
+          // 邀請碼處理（LINE 用戶暫用 lineUid 當識別）
+          try{
+            const pendingCode=localStorage.getItem('signalEdgeInviteCode');
+            if(pendingCode&&data.lineUid){
+              const fs=await import('../services/firestore.js');
+              await fs.recordInvite?.({inviteCode:pendingCode,inviteeUid:data.lineUid,inviteeEmail:'',rules:{}});
+              localStorage.removeItem('signalEdgeInviteCode');
+            }
+          }catch{}
           setRole('free');
           setPage('dashboard');
         }
@@ -45,7 +54,7 @@ export default function LoginPage({setPage,setRole}){
   },[]);
 
   const goLine=()=>{
-    if(LINE_CHANNEL_ID==='填入你的LINE_CHANNEL_ID'){
+    if(!LINE_CHANNEL_ID){
       alert('LINE 登入尚未設定，請使用 Email 或 Google 登入');
       return;
     }
@@ -68,6 +77,20 @@ export default function LoginPage({setPage,setRole}){
         if(!name.trim()){setErr('請輸入暱稱');setL(false);return;}
         await registerEmail(email,pw,name);
       }else{await loginEmail(email,pw);}
+      // 處理待使用的邀請碼
+      try{
+        const pendingCode=localStorage.getItem('signalEdgeInviteCode');
+        if(pendingCode){
+          const{getAuth:gA}=await import('firebase/auth');
+          const uid=gA().currentUser?.uid;
+          const email2=gA().currentUser?.email;
+          if(uid){
+            const fs=await import('../services/firestore.js');
+            const r=await fs.recordInvite?.({inviteCode:pendingCode,inviteeUid:uid,inviteeEmail:email2,rules:{}});
+            if(r?.success)localStorage.removeItem('signalEdgeInviteCode');
+          }
+        }
+      }catch(e){console.warn('[Login] invite record failed:',e.message);}
       setRole('free');setPage('dashboard');
     }catch(e){setErr(ERRS[e.code]||e.message);}
     setL(false);
@@ -77,7 +100,18 @@ export default function LoginPage({setPage,setRole}){
     setL(true);setErr('');
     try{
       const u=await loginGoogle();
-      if(u){setRole('free');setPage('dashboard');}
+      if(u){
+        // 處理待使用的邀請碼
+        try{
+          const pendingCode=localStorage.getItem('signalEdgeInviteCode');
+          if(pendingCode&&u.uid){
+            const fs=await import('../services/firestore.js');
+            const r=await fs.recordInvite?.({inviteCode:pendingCode,inviteeUid:u.uid,inviteeEmail:u.email,rules:{}});
+            if(r?.success)localStorage.removeItem('signalEdgeInviteCode');
+          }
+        }catch(e){console.warn('[Login] google invite record failed:',e.message);}
+        setRole('free');setPage('dashboard');
+      }
     }catch(e){if(e.code&&ERRS[e.code]!==undefined){if(ERRS[e.code])setErr(ERRS[e.code]);}else{setErr('Google 登入失敗');}}
     setL(false);
   };
@@ -140,3 +174,4 @@ export default function LoginPage({setPage,setRole}){
     </div>
   );
 }
+
