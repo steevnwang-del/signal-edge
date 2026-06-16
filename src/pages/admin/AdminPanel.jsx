@@ -3,9 +3,12 @@ import APISettings from './APISettings';
 import PromptSettings from './PromptSettings';
 import BacktestPanel from './BacktestPanel';
 import { getUsers, updateUser, getAnalyses } from '../../services/firestore';
+import { OWNER_EMAIL } from '../../config/owner';
 
 const C={navy:'#0F3460',white:'#FFFFFF',dark:'#111827',muted:'#6B7280',border:'#D4D8DF',bg:'#ECEEF2',amber:'#D97706',win:'#059669',loss:'#DC2626',panelAlt:'#F6F7FA'};
 const ROLES=['free','vip','agent','admin','super_admin'];
+const editableRolesFor = (u) => (String(u?.email || '').toLowerCase() === OWNER_EMAIL.toLowerCase()) ? ['super_admin'] : ROLES.filter(r => r !== 'super_admin');
+const isOwnerUser = (u) => String(u?.email || '').toLowerCase() === OWNER_EMAIL.toLowerCase() || u?.isOwner === true;
 const RC={free:C.muted,vip:C.amber,agent:'#7C3AED',admin:C.win,super_admin:C.loss};
 const TABS=[['overview','總覽'],['preview','👁 預覽'],['signals','信號管理'],['settle','快速結算'],['users','用戶資料'],['pricing','💰 定價'],['backtest','📈 回測'],['agents','代理管理'],['content','內容設定'],['ads','廣告管理'],['settings','系統設定'],['api','API 設定'],['prompt','Prompt 設定']];
 
@@ -33,7 +36,10 @@ export default function AdminPanel({signals,setPreviewRole,setPage,siteSettings,
   const loadUsers=async()=>{setLU(true);try{setUsers(await getUsers({limitN:100}));}catch{}setLU(false);};
 
   const saveUser=async()=>{
-    if(!editing)return;setSU(true);
+    if(!editing)return;
+    if(isOwnerUser(editing)){alert('Owner 帳號不可在前端被修改。');return;}
+    if(editing.role==='super_admin'){alert('不能從前端建立或修改 super_admin。Owner 已固定為 '+OWNER_EMAIL);return;}
+    setSU(true);
     const ok=await updateUser(editing.id,{role:editing.role,note:editing.note||''});
     if(ok){setUsers(p=>p.map(u=>u.id===editing.id?{...u,...editing}:u));setEditing(null);}
     else alert('更新失敗，請確認 Firestore 規則');
@@ -97,10 +103,10 @@ export default function AdminPanel({signals,setPreviewRole,setPage,siteSettings,
                       <td style={{padding:'10px 12px'}}>
                         {editing?.id===u.id?(
                           <select value={editing.role} onChange={e=>setEditing({...editing,role:e.target.value})} style={{padding:'4px 8px',border:`1px solid ${C.border}`,borderRadius:5,fontSize:12,cursor:'pointer'}}>
-                            {ROLES.map(r=><option key={r} value={r}>{r}</option>)}
+                            {editableRolesFor(u).map(r=><option key={r} value={r}>{r}</option>)}
                           </select>
                         ):(
-                          <span style={{fontSize:11,fontWeight:700,padding:'3px 8px',borderRadius:4,background:(RC[u.role]||C.muted)+'20',color:RC[u.role]||C.muted}}>{u.role||'free'}</span>
+                          <span style={{fontSize:11,fontWeight:700,padding:'3px 8px',borderRadius:4,background:(RC[u.role]||C.muted)+'20',color:RC[u.role]||C.muted}}>{isOwnerUser(u)?'owner / super_admin':(u.role||'free')}</span>
                         )}
                       </td>
                       <td style={{padding:'10px 12px',fontSize:11,color:C.muted,whiteSpace:'nowrap'}}>{u.createdAt?.toDate?.()?.toLocaleDateString('zh-TW')||'—'}</td>
@@ -113,7 +119,7 @@ export default function AdminPanel({signals,setPreviewRole,setPage,siteSettings,
                             <button onClick={()=>setEditing(null)} style={{padding:'5px 8px',border:`1px solid ${C.border}`,borderRadius:5,cursor:'pointer',background:'transparent',color:C.muted,fontSize:11}}>✕</button>
                           </div>
                         ):(
-                          <button onClick={()=>setEditing({...u})} style={{padding:'5px 10px',border:`1px solid ${C.navy}`,borderRadius:5,cursor:'pointer',background:'transparent',color:C.navy,fontSize:11,fontWeight:700}}>編輯</button>
+                          <button onClick={()=>isOwnerUser(u)?alert('Owner 帳號不可被修改。'):setEditing({...u})} disabled={isOwnerUser(u)} style={{padding:'5px 10px',border:`1px solid ${isOwnerUser(u)?C.border:C.navy}`,borderRadius:5,cursor:isOwnerUser(u)?'not-allowed':'pointer',background:'transparent',color:isOwnerUser(u)?C.muted:C.navy,fontSize:11,fontWeight:700}}>{isOwnerUser(u)?'已鎖定':'編輯'}</button>
                         )}
                       </td>
                     </tr>

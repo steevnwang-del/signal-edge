@@ -3,7 +3,7 @@ import { useState } from 'react';
 const C = { navy:'#0F3460', white:'#FFFFFF', dark:'#111827', muted:'#6B7280', border:'#D4D8DF', borderLight:'#E9EBF0', bg:'#F6F7FA', amber:'#D97706', win:'#059669', loss:'#DC2626', panelAlt:'#EFF6FF' };
 
 const ALL_SOURCES = [
-  { id:'gemini', name:'Gemini AI', envKey:'GEMINI_API_KEY', free:false, cat:'AI', desc:'AI分析引擎', quota:'1,500/天', source:'gemini', action:'analyze', test:{ prompt:'hi', type:'general' } },
+  { id:'aiProvider', name:'AI Provider（Gemini/Groq）', envKey:'GEMINI_API_KEY / GROQ_API_KEY', free:false, cat:'AI', desc:'Gemini 優先，失敗自動 fallback Groq', quota:'依 provider 額度', source:'aiProvider', action:'analyze', test:{ prompt:'請用一句繁體中文回覆：AI Provider 測試成功。', type:'general' } },
   { id:'odds', name:'The Odds API', envKey:'ODDS_API_KEY', free:false, cat:'賠率', desc:'多平台賠率', quota:'500/月', source:'odds', action:'getSports', test:{} },
   { id:'footballdata', name:'football-data.org', envKey:'FOOTBALL_DATA_KEY', free:false, cat:'足球', desc:'世界杯數據', quota:'10/分鐘', source:'football', action:'getStandings', test:{ competition:'WC' } },
   { id:'apisports', name:'API-Sports', envKey:'API_SPORTS_KEY', free:false, cat:'多項', desc:'籃球+棒球+F1', quota:'100/天', source:'apisports', action:'getUsage', test:{} },
@@ -85,12 +85,15 @@ export default function APISettings() {
     setCronRunning(true);
     setCronLog('⏳ 正在呼叫 AI 生成分析...');
     try {
-      const r = await fetch('/api/cron/generate-analysis', { method:'POST' });
+      const r = await fetch('/api/cron/generate-analysis', {
+        method:'POST',
+        headers:{ 'Content-Type':'application/json', 'x-admin-trigger':'1' }
+      });
       const d = await r.json();
       if (d.success) {
         setCronLog(`✅ 完成！成功生成 ${d.generated} 份分析，失敗 ${d.failed||0} 份。${new Date().toLocaleTimeString('zh-TW')}`);
       } else {
-        setCronLog('❌ 生成失敗，請確認 GEMINI_API_KEY 已設定');
+        setCronLog('❌ 生成失敗，請確認 AI_PROVIDER / GEMINI_API_KEY / GROQ_API_KEY / ODDS_API_KEY 已設定');
       }
     } catch (e) {
       setCronLog('❌ 連線失敗：' + e.message);

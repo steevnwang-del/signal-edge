@@ -61,12 +61,22 @@ export default function AutoAnalysisSettings() {
 
   const S = (k, v) => setSettings(p => ({ ...p, [k]: v }));
 
-  // 模擬手動觸發（實際串接 Firebase 後呼叫 Cloud Function）
+  // 手動觸發 Vercel Cron API
   const manualTrigger = async () => {
     setManualRunning(true);
-    await new Promise(r => setTimeout(r, 2000));
-    setManualRunning(false);
-    alert('✅ 已手動觸發分析生成，約1-2分鐘後更新完成');
+    try {
+      const r = await fetch('/api/cron/generate-analysis', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'x-admin-trigger': '1' },
+      });
+      const d = await r.json().catch(() => ({}));
+      if (!r.ok || !d.success) throw new Error(d.error || '生成失敗');
+      alert(`✅ 已手動觸發分析生成：${d.generated || 0} 份，約 1–2 分鐘後更新完成`);
+    } catch (e) {
+      alert('❌ 手動觸發失敗：' + e.message);
+    } finally {
+      setManualRunning(false);
+    }
   };
 
   // 測試 Prompt
@@ -76,12 +86,16 @@ export default function AutoAnalysisSettings() {
       soccer: '巴西 vs 摩洛哥\n主隊近況：W W D W W，場均進球：2.1\n客隊近況：W L W W D，場均進球：0.8\n模型預測主隊勝率：67%',
     };
     try {
-      const r = await fetch('/api/analyze', {
+      const r = await fetch('/api/gateway', {
         method: 'POST', headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ prompt: settings.prompts[activePrompt].replace(/{[^}]+}/g, '（測試數據）'), type: 'match' }),
+        body: JSON.stringify({
+          source: 'aiProvider',
+          action: 'analyze',
+          params: { prompt: settings.prompts[activePrompt].replace(/{[^}]+}/g, '（測試數據）'), type: 'match' },
+        }),
       });
       const d = await r.json();
-      setTestResult(d.analysis || '測試失敗');
+      setTestResult(d.result?.analysis || d.analysis || d.error || '測試失敗');
     } catch { setTestResult('無法連接 AI 服務'); }
     setTesting(false);
   };
@@ -120,7 +134,7 @@ export default function AutoAnalysisSettings() {
 
         {/* API 用量預估 */}
         <div style={{ background:C.white, border:`1px solid ${C.border}`, borderRadius:10, padding:'18px 20px' }}>
-          <div style={{ fontSize:14, fontWeight:700, color:C.dark, marginBottom:16 }}>📊 Gemini API 用量預估</div>
+          <div style={{ fontSize:14, fontWeight:700, color:C.dark, marginBottom:16 }}>📊 AI API 用量預估</div>
           {[
             { label:'今日賽事', count: 8, perDay: 8 },
             { label:'隊伍分析（週更）', count: 4, perDay: 0.6 },

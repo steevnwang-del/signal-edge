@@ -14,7 +14,7 @@ const callAI=async(card)=>{
   const prompt=`你是 SignalEdge 的運動數據分析師。根據以下 DATA_BLOCK 生成賽前分析。嚴格使用數據。不使用「穩」「必中」「保證」。150字繁體中文。
 DATA_BLOCK: 賽事：${card.homeEn||card.home} vs ${card.awayEn||card.away}（${card.sport}）市場去水：主 ${card.nvH}% 客 ${card.nvA}% EV：${card.ev}%  決策：${card.decision}
 輸出：市場共識 + 主要風險 + 開賽前確認事項。`;
-  const r=await fetch('/api/gateway',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({source:'gemini',action:'analyze',params:{prompt,type:'general'}})});
+  const r=await fetch('/api/gateway',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({source:'aiProvider',action:'analyze',params:{prompt,type:'general'}})});
   const d=await r.json();
   return d.result?.analysis||null;
 };

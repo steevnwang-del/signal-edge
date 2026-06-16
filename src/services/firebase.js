@@ -1,8 +1,8 @@
-// ── Firebase 初始化 ────────────────────────────────────────────────────────────
-// API Keys 從 .env 讀取，永遠不要把真實 key 寫死在這裡
-// Vercel 部署時在 Dashboard → Settings → Environment Variables 設定
+// Firebase 初始化（前端）
+// VITE_FIREBASE_* 是 Firebase Web App config，允許在前端使用。
+// 不要把 Gemini / Groq / Odds / Stripe secret key 放到 VITE_ 變數。
 
-import { initializeApp } from 'firebase/app';
+import { initializeApp, getApps } from 'firebase/app';
 import { getAuth } from 'firebase/auth';
 import { getFirestore } from 'firebase/firestore';
 
@@ -15,7 +15,23 @@ const firebaseConfig = {
   appId: import.meta.env.VITE_FIREBASE_APP_ID,
 };
 
-const app = initializeApp(firebaseConfig);
-export const auth = getAuth(app);
-export const db = getFirestore(app);
+let app = null;
+let auth = null;
+let db = null;
+let firebaseInitError = null;
+
+try {
+  if (!firebaseConfig.apiKey || !firebaseConfig.projectId) {
+    throw new Error('Firebase Web config missing. 請設定所有 VITE_FIREBASE_* 後重新部署。');
+  }
+  app = getApps().length ? getApps()[0] : initializeApp(firebaseConfig);
+  auth = getAuth(app);
+  db = getFirestore(app);
+} catch (e) {
+  firebaseInitError = e.message;
+  console.warn('[Firebase] init skipped:', e.message);
+}
+
+export const getFirebaseInitError = () => firebaseInitError;
+export { auth, db };
 export default app;

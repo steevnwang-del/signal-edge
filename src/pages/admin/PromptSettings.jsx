@@ -185,7 +185,7 @@ export default function PromptSettings() {
     try {
       const r = await fetch('/api/gateway', {
         method:'POST', headers:{'Content-Type':'application/json'},
-        body: JSON.stringify({ source:'gemini', action:'analyze', params:{ prompt:filled, type:'general' } }),
+        body: JSON.stringify({ source:'aiProvider', action:'analyze', params:{ prompt:filled, type:'general' } }),
       });
       const d = await r.json();
       setTestResult(d.result?.analysis || '測試失敗');

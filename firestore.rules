@@ -1,0 +1,94 @@
+rules_version = '2';
+
+service cloud.firestore {
+  match /databases/{database}/documents {
+    function signedIn() {
+      return request.auth != null;
+    }
+
+    function ownerEmail() {
+      return "kelvinchen20000108@gmail.com";
+    }
+
+    function isOwner() {
+      return signedIn() && request.auth.token.email == ownerEmail();
+    }
+
+    function myUserDoc() {
+      return get(/databases/$(database)/documents/users/$(request.auth.uid));
+    }
+
+    function myRole() {
+      return signedIn() && exists(/databases/$(database)/documents/users/$(request.auth.uid))
+        ? myUserDoc().data.role
+        : "free";
+    }
+
+    function isAdmin() {
+      return isOwner() || myRole() == "admin" || myRole() == "super_admin";
+    }
+
+    function isSuperAdmin() {
+      return isOwner() || myRole() == "super_admin";
+    }
+
+    match /users/{userId} {
+      allow read: if signedIn() && (request.auth.uid == userId || isAdmin());
+
+      allow create: if signedIn()
+        && request.auth.uid == userId
+        && request.resource.data.email == request.auth.token.email
+        && (
+          (request.auth.token.email == ownerEmail()
+            && request.resource.data.role == "super_admin"
+            && request.resource.data.isOwner == true)
+          ||
+          (request.auth.token.email != ownerEmail()
+            && request.resource.data.role == "free"
+            && !("isOwner" in request.resource.data))
+        );
+
+      // Owner 自己可以維護所有 users。
+      allow update: if isOwner();
+
+      // 一般 admin 可以更新非 owner 用戶，但不能建立 super_admin，也不能修改 owner。
+      allow update: if isAdmin()
+        && resource.data.email != ownerEmail()
+        && request.resource.data.email == resource.data.email
+        && request.resource.data.role != "super_admin"
+        && !("isOwner" in request.resource.data);
+
+      // 只有 owner 可刪使用者，且 owner 自己不可刪。
+      allow delete: if isOwner() && resource.data.email != ownerEmail();
+    }
+
+    match /analyses/{id} {
+      allow read: if true;
+      allow create, update, delete: if isAdmin();
+    }
+
+    match /cache/{id} {
+      allow read: if true;
+      allow write: if isAdmin();
+    }
+
+    match /settings/{id} {
+      allow read: if true;
+      allow write: if isOwner();
+    }
+
+    match /commissions/{id} {
+      allow read: if isAdmin();
+      allow create, update, delete: if isOwner();
+    }
+
+    match /agents/{id} {
+      allow read: if isAdmin();
+      allow create, update, delete: if isOwner();
+    }
+
+    match /{document=**} {
+      allow read, write: if false;
+    }
+  }
+}

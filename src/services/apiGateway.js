@@ -4,7 +4,7 @@
  * 
  * 使用方式：
  * import { gateway } from './apiGateway';
- * const result = await gateway('gemini', 'analyze', { prompt, type });
+ * const result = await gateway('aiProvider', 'analyze', { prompt, type });
  * const result = await gateway('odds', 'getUpcoming', { region: 'eu' });
  * const result = await gateway('football', 'getTeam', { teamId: 5 });
  */
@@ -29,9 +29,9 @@ export const gateway = async (source, action, params = {}) => {
 
 // 便捷方法
 export const AI = {
-  analyze:        (prompt, type)  => gateway('gemini', 'analyze', { prompt, type }),
-  translateTitle: (titles)        => gateway('gemini', 'translateTitles', { titles }),
-  batch:          (items)         => gateway('gemini', 'batch', { items }),
+  analyze:        (prompt, type)  => gateway('aiProvider', 'analyze', { prompt, type }),
+  translateTitle: (titles)        => gateway('aiProvider', 'translateTitles', { titles }),
+  batch:          (items)         => gateway('aiProvider', 'batch', { items }),
 };
 
 export const Odds = {

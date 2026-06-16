@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { getAIAnalysis } from '../services/aiAnalysis';
 
 export default function AIBox({ prompt, type = 'general', title = 'AI 分析', autoLoad = false }) {
@@ -15,8 +15,11 @@ export default function AIBox({ prompt, type = 'general', title = 'AI 分析', a
     setLoaded(true);
   };
 
-  // autoLoad on first render
-  useState(() => { if (autoLoad) load(); }, []);
+  // autoLoad on first render / when prompt changes
+  useEffect(() => {
+    if (autoLoad) load();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [autoLoad, prompt, type]);
 
   const C = { navy: '#0F3460', muted: '#6B7280', border: '#D4D8DF', bg: '#F6F7FA' };
 
