@@ -6,6 +6,17 @@ import { getAdminDB, getAdminInitStatus, adminTimestamp } from '../../lib/server
 import { buildAnalysisFromOddsEvent, buildPromptFromDataBlock, fallbackNarrative, SPORT_MAP } from '../../lib/core/analysisBuilder.js';
 import { taipeiWindow, taipeiDateKey } from '../../lib/core/timeBuckets.js';
 
+// MSI 2026 static schedule (Riot API key 24h 過期，用靜態資料補充)
+// commence_time 動態計算在 runtime，確保永遠是未來時間
+const getMSIEvents = () => {
+  const base = Date.now();
+  return [
+    { id: 'msi2026_t1_gen', sport_key: 'esports_lol_msi', sport_title: 'MSI 2026', home_team: 'T1', away_team: 'Gen.G', commence_time: new Date(base + 1 * 86400000).toISOString(), bookmakers: [] },
+    { id: 'msi2026_blg_g2', sport_key: 'esports_lol_msi', sport_title: 'MSI 2026', home_team: 'BLG', away_team: 'G2 Esports', commence_time: new Date(base + 2 * 86400000).toISOString(), bookmakers: [] },
+    { id: 'msi2026_t1_blg', sport_key: 'esports_lol_msi', sport_title: 'MSI 2026', home_team: 'T1', away_team: 'BLG', commence_time: new Date(base + 3 * 86400000).toISOString(), bookmakers: [] },
+  ];
+};
+
 
 const removeUndefined = (obj) => {
   if (Array.isArray(obj)) return obj.map(removeUndefined);
@@ -108,7 +119,7 @@ const fetchOdds = async ({ daysFrom = 3, region = 'eu' } = {}) => {
   console.log('[fetchOdds] sport_keys found:', JSON.stringify(sportKeyCount));
 
   // 4. 電競靜態補充（MSI 2026，Riot API key 已過期）
-  const esportsEvents = MSI_2026_EVENTS.filter(e => !seen.has(e.id));
+  const esportsEvents = getMSIEvents().filter(e => !seen.has(e.id));
   
   return { events: [...allEvents, ...esportsEvents], usage };
 };
@@ -144,14 +155,6 @@ const buildSections = (analyses = []) => {
     lowData: today.filter(a => Number(a.dataCompleteness || 0) < 60),
   };
 };
-
-
-// MSI 2026 static schedule (電競賽事 Riot API key 已過期，用靜態資料補充)
-const MSI_2026_EVENTS = [
-  { id: 'msi2026_t1_gen', sport_key: 'esports_lol_msi', sport_title: 'MSI 2026', home_team: 'T1', away_team: 'Gen.G', commence_time: new Date(Date.now() + 1 * 86400000).toISOString(), bookmakers: [] },
-  { id: 'msi2026_blg_g2', sport_key: 'esports_lol_msi', sport_title: 'MSI 2026', home_team: 'BLG', away_team: 'G2 Esports', commence_time: new Date(Date.now() + 2 * 86400000).toISOString(), bookmakers: [] },
-  { id: 'msi2026_t1_blg', sport_key: 'esports_lol_msi', sport_title: 'MSI 2026', home_team: 'T1', away_team: 'BLG', commence_time: new Date(Date.now() + 3 * 86400000).toISOString(), bookmakers: [] },
-];
 
 export default async function handler(req, res) {
   if (!isAuthorized(req)) return res.status(401).json({ success: false, error: 'Unauthorized' });
