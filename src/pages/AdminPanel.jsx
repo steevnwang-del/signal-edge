@@ -1,3 +1,3 @@
-// 此檔案已移至 src/pages/admin/AdminPanel.jsx
-// 保留此檔案避免舊路徑 import 報錯
-export { default } from './admin/AdminPanel';
+// 此頁面已合併至 src/pages/admin/AdminPanel.jsx
+// 此檔案保留為空以避免路徑衝突
+export default function AdminPanelLegacy() { return null; }
