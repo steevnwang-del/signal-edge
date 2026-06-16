@@ -19,6 +19,7 @@ const SOURCES = {
   news:       () => import('../lib/sources/news.js'),
   polymarket: () => import('../lib/sources/polymarket.js'),
   apisports:  () => import('../lib/sources/apisports.js'),
+  predictions: () => import('../lib/sources/predictions.js'),
 };
 
 const dateKey = () => new Date().toISOString().slice(0, 10);
@@ -101,3 +102,4 @@ export default async function handler(req, res) {
     });
   }
 }
+
