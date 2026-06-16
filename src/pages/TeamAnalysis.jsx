@@ -1,4 +1,5 @@
 import { useState, useEffect } from 'react';
+import { gateway } from '../services/apiGateway';
 
 const C={navy:'#0F3460',white:'#FFFFFF',dark:'#111827',muted:'#6B7280',border:'#D4D8DF',bg:'#ECEEF2',amber:'#D97706',win:'#059669'};
 const Spin=()=> <div style={{width:32,height:32,border:`3px solid ${C.border}`,borderTopColor:C.navy,borderRadius:'50%',animation:'spin 0.8s linear infinite',margin:'32px auto'}}><style>{`@keyframes spin{to{transform:rotate(360deg)}}`}</style></div>;
@@ -47,27 +48,27 @@ const toLolTeam = ([name,abbr,region,color,star,tournament], idx) => ({
 });
 const LOL_TEAMS = [...MSI_2026_TEAMS, ...LOL_EXTRA_TEAMS].map(toLolTeam);
 
-const safeJson = async (r) => { const text = await r.text(); try { return JSON.parse(text); } catch { throw new Error(text.slice(0,120) || `HTTP ${r.status}`); } };
-
 const fetchNBA=async()=>{
-  const r=await fetch('https://site.api.espn.com/apis/site/v2/sports/basketball/nba/teams');
-  if(!r.ok) throw new Error(`ESPN NBA HTTP ${r.status}`);
-  const d=await safeJson(r);
-  const rows=d.sports?.[0]?.leagues?.[0]?.teams || [];
-  return rows.map(x=>{const t=x.team||x;return{id:`nba-${t.id}`,espnId:t.id,name:t.displayName||t.name,en:t.displayName||t.name,abbr:t.abbreviation,color:t.color?`#${String(t.color).replace('#','')}`:C.navy,logo:t.logos?.[0]?.href,conf:t.groups?.name||t.groups?.abbreviation||'',sport:'NBA',flag:'',players:[]};}).filter(t=>t.name);
+  const result=await gateway('nba','getTeams',{});
+  return result.teams||[];
 };
 const fetchMLB=async()=>{
-  const season=new Date().getFullYear();
-  const r=await fetch(`https://statsapi.mlb.com/api/v1/teams?sportId=1&season=${season}`);
-  if(!r.ok) throw new Error(`MLB Stats HTTP ${r.status}`);
-  const d=await safeJson(r);
-  return (d.teams||[]).filter(t=>t.active).map(t=>({id:`mlb-${t.id}`,mlbId:t.id,name:t.name,en:t.name,abbr:t.abbreviation,lg:t.league?.name||'',div:t.division?.name||'',sport:'MLB',flag:'',color:'#002D62',players:[]}));
+  const result=await gateway('mlb','getTeams',{season:new Date().getFullYear()});
+  return result.teams||[];
 };
 const fetchWC=async()=>WC2026_TEAMS;
 const fetchMSI=async()=>LOL_TEAMS.filter(t=>t.sport==='MSI 2026');
 const fetchLOL=async()=>LOL_TEAMS;
-const fetchNBAPlayers=async(team)=>{const teamId=team.espnId||String(team.id).replace('nba-','');const r=await fetch(`https://site.api.espn.com/apis/site/v2/sports/basketball/nba/teams/${teamId}/roster`);if(!r.ok)throw new Error(`ESPN roster HTTP ${r.status}`);const d=await safeJson(r);return(d.athletes||[]).flatMap(g=>g.items||[]).slice(0,15).map(p=>({n:p.fullName||p.displayName||'',pos:p.position?.abbreviation||'',no:+p.jersey||0,star:(p.experience?.years||0)>5})).filter(p=>p.n);};
-const fetchMLBPlayers=async(team)=>{const teamId=team.mlbId||String(team.id).replace('mlb-','');const season=new Date().getFullYear();const r=await fetch(`https://statsapi.mlb.com/api/v1/teams/${teamId}/roster?season=${season}&rosterType=active`);if(!r.ok)throw new Error(`MLB roster HTTP ${r.status}`);const d=await safeJson(r);return(d.roster||[]).slice(0,15).map(p=>({n:p.person?.fullName||'',pos:p.position?.abbreviation||'',no:+p.jerseyNumber||0,star:false})).filter(p=>p.n);};
+const fetchNBAPlayers=async(team)=>{
+  const teamId=team.espnId||String(team.id).replace('nba-','');
+  const result=await gateway('nba','getTeamRoster',{teamId});
+  return result.players||[];
+};
+const fetchMLBPlayers=async(team)=>{
+  const teamId=team.mlbId||String(team.id).replace('mlb-','');
+  const result=await gateway('mlb','getTeamRoster',{teamId,season:new Date().getFullYear()});
+  return result.players||[];
+};
 const fetchStaticPlayers=async(team)=>team.players||[];
 
 const SPORTS=['世界杯 2026','MSI 2026','LOL 電競','NBA','MLB'];
@@ -92,7 +93,7 @@ export default function TeamAnalysis(){
 
   return(
     <div style={{background:C.bg,minHeight:'100vh'}}><div style={{maxWidth:1100,margin:'0 auto',padding:'28px 20px'}}>
-      <div style={{marginBottom:20}}><div style={{fontSize:11,fontWeight:700,color:C.amber,letterSpacing:1.5,marginBottom:6,textTransform:'uppercase'}}>即時數據</div><h2 style={{fontSize:26,fontWeight:900,color:C.dark,margin:'0 0 4px'}}>隊伍分析</h2><p style={{color:C.muted,fontSize:13,margin:0}}>世界杯 48 隊 · MSI 2026 重點隊伍 · NBA/MLB 公開 API · LOL 主要賽區資料</p></div>
+      <div style={{marginBottom:20}}><div style={{fontSize:11,fontWeight:700,color:C.amber,letterSpacing:1.5,marginBottom:6,textTransform:'uppercase'}}>即時數據</div><h2 style={{fontSize:26,fontWeight:900,color:C.dark,margin:'0 0 4px'}}>隊伍分析</h2><p style={{color:C.muted,fontSize:13,margin:0}}>世界杯 48 隊 · MSI 2026 重點隊伍 · NBA/MLB 由後端 Gateway 代理，避免 CORS · LOL 主要賽區資料</p></div>
       <div style={{display:'flex',gap:10,marginBottom:16,flexWrap:'wrap'}}><div style={{overflowX:'auto',flex:1}}><div style={{display:'flex',gap:4,width:'max-content'}}>{SPORTS.map(s=><button key={s} onClick={()=>setSport(s)} style={{padding:'8px 14px',border:`1px solid ${sport===s?C.navy:C.border}`,borderRadius:7,cursor:'pointer',background:sport===s?C.navy:'transparent',color:sport===s?C.white:C.muted,fontSize:12,fontWeight:700,whiteSpace:'nowrap'}}>{s}</button>)}</div></div><div style={{display:'flex',gap:8}}><input placeholder="搜尋隊伍 / 縮寫 / 組別..." value={search} onChange={e=>setSearch(e.target.value)} style={{padding:'8px 12px',border:`1px solid ${C.border}`,borderRadius:7,fontSize:13,outline:'none',minWidth:170}}/><button onClick={loadTeams} disabled={loading} style={{padding:'8px 14px',border:`1px solid ${C.border}`,borderRadius:7,cursor:'pointer',background:loading?C.muted:C.white,color:C.muted,fontSize:12}}>🔄</button></div></div>
       {loading&&<Spin/>}{error&&<div style={{background:'#FEF2F2',border:'1px solid #FECACA',borderRadius:8,padding:'14px 16px',color:'#DC2626',fontSize:13,marginBottom:16,whiteSpace:'pre-line'}}>⚠️ {error}</div>}{!loading&&<div style={{fontSize:12,color:C.muted,marginBottom:12}}>共 {filtered.length} 支隊伍</div>}
       <div style={{display:'grid',gridTemplateColumns:'repeat(auto-fill,minmax(280px,1fr))',gap:10}}>{filtered.map(t=>{const isO=open===t.id,ps=players[t.id],col=t.color||C.navy;return <div key={t.id} style={{background:C.white,border:`1.5px solid ${isO?col:C.border}`,borderRadius:10,overflow:'hidden'}}><div onClick={()=>handleOpen(t)} style={{padding:'14px 16px',cursor:'pointer',display:'flex',justifyContent:'space-between',alignItems:'center'}} onMouseEnter={e=>e.currentTarget.style.background='#F6F7FA'} onMouseLeave={e=>e.currentTarget.style.background=C.white}><div style={{flex:1,minWidth:0}}><div style={{display:'flex',gap:6,marginBottom:5,alignItems:'center',flexWrap:'wrap'}}>{t.flag&&<span style={{fontSize:16}}>{t.flag}</span>}{t.crest&&<img src={t.crest} alt="" style={{width:20,height:20,objectFit:'contain'}}/>}{t.logo&&<img src={t.logo} alt="" style={{width:24,height:24,objectFit:'contain'}}/>}{(t.conf||t.lg||t.region||t.area)&&<span style={{fontSize:10,fontWeight:700,color:col,background:col+'18',padding:'2px 6px',borderRadius:3}}>{t.conf||t.lg||t.region||t.area}</span>}{(t.div||t.group)&&<span style={{fontSize:10,color:C.muted}}>{t.group?`${t.group}組`:t.div}</span>}</div><div style={{fontSize:15,fontWeight:800,color:C.dark,overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}>{t.name}</div>{t.abbr&&<div style={{fontSize:11,color:C.muted}}>{t.abbr}{t.star?` · ⭐ ${t.star}`:''}</div>}</div><span style={{fontSize:18,color:col,transform:isO?'rotate(180deg)':'none',transition:'0.2s'}}>⌄</span></div>{isO&&<div style={{borderTop:`1px solid ${C.border}`,padding:'12px 16px',background:'#FAFBFC'}}>{t.note&&<div style={{fontSize:11,color:C.muted,lineHeight:1.5,marginBottom:10}}>ℹ️ {t.note}</div>}<div style={{fontSize:11,fontWeight:800,color:C.navy,marginBottom:8}}>隊伍名單 / 核心資訊</div>{loadingP===t.id&&<div style={{fontSize:12,color:C.muted}}>載入名單中...</div>}{ps&&ps.length>0&&ps.map((p,i)=><div key={`${p.n}-${i}`} style={{display:'flex',alignItems:'center',gap:8,padding:'6px 0',borderBottom:i<ps.length-1?'1px solid #EEF0F4':'none'}}><span style={{width:28,fontSize:11,color:C.muted,fontFamily:'ui-monospace,monospace'}}>{p.no||'—'}</span><span style={{flex:1,fontSize:13,color:C.dark,fontWeight:p.star?800:500}}>{p.n}</span><span style={{fontSize:10,color:C.muted,background:'#EEF0F4',padding:'2px 6px',borderRadius:4}}>{p.pos||'—'}</span></div>)}{ps&&ps.length===0&&<div style={{fontSize:12,color:C.muted}}>暫無名單資料</div>}</div>}</div>;})}</div>

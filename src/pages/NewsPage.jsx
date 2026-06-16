@@ -6,6 +6,10 @@ const SOURCE_LABELS={espn:'ESPN',bbc_sport:'BBC Sport',sky_sports:'Sky Sports',g
 const detectSport=(title='')=>{/league of legends|\blol\b|msi|worlds|lck|lpl|lec|lcs|valorant|cs2|counter-strike|dota/i.test(title)?'電競':/world cup|fifa|premier league|champions league|soccer|football|transfer/i.test(title)?'足球':/nba|basketball|wnba/i.test(title)?'NBA':/mlb|baseball|yankees|dodgers|mets|phillies/i.test(title)?'MLB':/ufc|mma/i.test(title)?'UFC':'綜合'};
 const timeAgo=(date)=>{try{const d=new Date(date),s=(Date.now()-d.getTime())/1000;if(s<3600)return`${Math.max(1,Math.floor(s/60))} 分鐘前`;if(s<86400)return`${Math.floor(s/3600)} 小時前`;return d.toLocaleDateString('zh-TW');}catch{return'';}};
 const Spinner=()=> <div style={{textAlign:'center',padding:50,color:C.muted}}><div style={{width:36,height:36,border:`3px solid ${C.border}`,borderTopColor:C.navy,borderRadius:'50%',animation:'spin 0.8s linear infinite',margin:'0 auto 12px'}}/><div>載入新聞...</div><style>{`@keyframes spin{to{transform:rotate(360deg)}}`}</style></div>;
+const clientTimeout = (promise, ms, message='請求逾時') => new Promise((resolve, reject) => {
+  const timer=setTimeout(()=>reject(new Error(message)), ms);
+  promise.then(v=>{clearTimeout(timer);resolve(v);}).catch(e=>{clearTimeout(timer);reject(e);});
+});
 
 const FALLBACK_NEWS = [
   {id:'fallback-1',title:'FIFA World Cup model updates continue after opening matches',titleZh:'世界盃開賽後，模型預測持續依賽果動態更新',source:'fallback',sourceLabel:'SignalEdge',sport:'足球',url:'https://www.fifa.com/',publishedAt:new Date().toISOString()},
@@ -31,10 +35,7 @@ export default function NewsPage(){
           }
         }catch(e){ console.warn('[NewsPage] cache skipped:', e.message); }
 
-        const ac=new AbortController();
-        const t=setTimeout(()=>ac.abort(),12000);
-        const r=await fetch('/api/gateway',{method:'POST',headers:{'Content-Type':'application/json'},signal:ac.signal,body:JSON.stringify({source:'news',action:'getLatest',params:{limit:30,translate:true}})});
-        clearTimeout(t);
+        const r=await clientTimeout(fetch('/api/gateway',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({source:'news',action:'getLatest',params:{limit:30,translate:'safe'}})}),22000,'新聞 Gateway 回應逾時');
         const d=await r.json().catch(()=>({}));
         if(!r.ok||d.success===false) throw new Error(d.error||`HTTP ${r.status}`);
         const articles=(d.result?.articles||[]).filter(a=>a.title&&a.url).map((a,i)=>({
@@ -44,7 +45,7 @@ export default function NewsPage(){
       }catch(e){
         console.warn('[NewsPage] load failed:',e.message);
         setNews(FALLBACK_NEWS);
-        setError(`新聞來源暫時無法連線：${e.name==='AbortError'?'請求逾時':e.message}`);
+        setError(`新聞來源暫時無法連線：${e.message || '未知錯誤'}`);
       }finally{setLoading(false);}
     };
     load();
@@ -59,7 +60,7 @@ export default function NewsPage(){
         <div style={{marginBottom:22}}>
           <div style={{fontSize:11,fontWeight:700,letterSpacing:1.5,color:C.amber,marginBottom:6,textTransform:'uppercase'}}>即時新聞</div>
           <h2 style={{fontSize:26,fontWeight:900,color:C.dark,margin:'0 0 4px'}}>國際媒體速報</h2>
-          <p style={{color:C.muted,fontSize:13,margin:0}}>ESPN · BBC · Dot Esports · Goal.com · HLTV · 點擊開啟原文 · AI 可用時自動翻譯標題</p>
+          <p style={{color:C.muted,fontSize:13,margin:0}}>ESPN · BBC · Dot Esports · Goal.com · HLTV · 後端代理 RSS · AI 可用時翻譯前幾則標題</p>
         </div>
 
         {sports.length>1&&(
