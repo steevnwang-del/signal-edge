@@ -13,10 +13,11 @@ export default function MainNav({page,role,user,setPage,onLogout,siteSettings}){
 
   const navItems=[
     {id:'dashboard',label:'賽事分析',icon:'📊'},
-    ...(siteSettings?.playerSearchEnabled?[{id:'players',label:'選手',icon:'🏅'}]:[]),
     {id:'teams',label:'隊伍',icon:'🏆'},
     {id:'calendar',label:'賽程',icon:'📅'},
     {id:'news',label:'新聞',icon:'📰'},
+    ...(isLoggedIn?[{id:'agent',label:'代理',icon:'🤝'}]:[]),
+    ...(siteSettings?.playerSearchEnabled?[{id:'players',label:'選手',icon:'🏅'}]:[]),
   ];
 
   return(

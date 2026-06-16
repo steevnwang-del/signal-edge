@@ -1,105 +1,102 @@
-import { useState, useEffect } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 
-const C={navy:'#0F3460',white:'#FFFFFF',dark:'#111827',muted:'#6B7280',border:'#D4D8DF',borderLight:'#E9EBF0',bg:'#ECEEF2',amber:'#D97706',loss:'#DC2626',panelAlt:'#F6F7FA'};
+const C={navy:'#0F3460',white:'#FFFFFF',dark:'#111827',muted:'#6B7280',border:'#D4D8DF',borderLight:'#E9EBF0',bg:'#ECEEF2',amber:'#D97706',panelAlt:'#F6F7FA'};
 const SC={足球:'#1B5E20',世界杯:'#1B5E20',NBA:'#C9082A',MLB:'#002D72',電競:'#7C3AED',UFC:'#D20A0A',綜合:'#0F3460'};
-const SOURCE_LABELS={espn:'ESPN',bbc_sport:'BBC Sport',sky_sports:'Sky Sports',goal:'Goal.com',dot_esports:'Dot Esports',hltv:'HLTV',newsapi:'NewsAPI'};
-const detectSport=(title='')=>{/league of legends|\blol\b|msi|worlds|lck|lpl|lec|lcs|valorant|cs2|counter-strike|dota/i.test(title)?'電競':/world cup|fifa|premier league|champions league|soccer|football|transfer/i.test(title)?'足球':/nba|basketball|wnba/i.test(title)?'NBA':/mlb|baseball|yankees|dodgers|mets|phillies/i.test(title)?'MLB':/ufc|mma/i.test(title)?'UFC':'綜合'};
+const SOURCE_LABELS={espn:'ESPN',bbc_sport:'BBC Sport',sky_sports:'Sky Sports',goal:'Goal.com',dot_esports:'Dot Esports',hltv:'HLTV',newsapi:'NewsAPI',fallback:'SignalEdge'};
+const detectSport=(title='')=>/league of legends|\blol\b|msi|worlds|lck|lpl|lec|lcs|valorant|cs2|counter-strike|dota/i.test(title)?'電競':/world cup|fifa|premier league|champions league|soccer|football|transfer/i.test(title)?'足球':/nba|basketball|wnba/i.test(title)?'NBA':/mlb|baseball|yankees|dodgers|mets|phillies/i.test(title)?'MLB':/ufc|mma/i.test(title)?'UFC':'綜合';
 const timeAgo=(date)=>{try{const d=new Date(date),s=(Date.now()-d.getTime())/1000;if(s<3600)return`${Math.max(1,Math.floor(s/60))} 分鐘前`;if(s<86400)return`${Math.floor(s/3600)} 小時前`;return d.toLocaleDateString('zh-TW');}catch{return'';}};
-const Spinner=()=> <div style={{textAlign:'center',padding:50,color:C.muted}}><div style={{width:36,height:36,border:`3px solid ${C.border}`,borderTopColor:C.navy,borderRadius:'50%',animation:'spin 0.8s linear infinite',margin:'0 auto 12px'}}/><div>載入新聞...</div><style>{`@keyframes spin{to{transform:rotate(360deg)}}`}</style></div>;
-const clientTimeout = (promise, ms, message='請求逾時') => new Promise((resolve, reject) => {
-  const timer=setTimeout(()=>reject(new Error(message)), ms);
-  promise.then(v=>{clearTimeout(timer);resolve(v);}).catch(e=>{clearTimeout(timer);reject(e);});
-});
+const localZhTitle=(title='')=>{
+  let t=String(title||'').trim();
+  const pairs=[
+    [/World Cup/ig,'世界盃'],[/FIFA/ig,'FIFA'],[/NBA/ig,'NBA'],[/MLB/ig,'MLB'],[/League of Legends/ig,'英雄聯盟'],[/LoL/ig,'英雄聯盟'],[/MSI/ig,'MSI'],[/Champions League/ig,'歐冠'],[/Premier League/ig,'英超'],[/transfer/ig,'轉會'],[/injury/ig,'傷病'],[/final/ig,'決賽'],[/semi-final/ig,'準決賽'],[/preview/ig,'賽前分析'],[/odds/ig,'賠率'],[/prediction/ig,'預測'],[/wins/ig,'擊敗'],[/signs/ig,'簽下'],[/coach/ig,'教練'],[/roster/ig,'名單']
+  ];
+  pairs.forEach(([re,zh])=>{t=t.replace(re,zh);});
+  return t;
+};
+const timeout=(promise,ms,fallback)=>new Promise(resolve=>{const t=setTimeout(()=>resolve(fallback),ms);promise.then(v=>{clearTimeout(t);resolve(v);}).catch(()=>{clearTimeout(t);resolve(fallback);});});
 
-const FALLBACK_NEWS = [
-  {id:'fallback-1',title:'FIFA World Cup model updates continue after opening matches',titleZh:'世界盃開賽後，模型預測持續依賽果動態更新',source:'fallback',sourceLabel:'SignalEdge',sport:'足球',url:'https://www.fifa.com/',publishedAt:new Date().toISOString()},
-  {id:'fallback-2',title:'MSI teams prepare for international League of Legends competition',titleZh:'MSI 隊伍備戰國際賽，版本理解與賽區強度成焦點',source:'fallback',sourceLabel:'SignalEdge',sport:'電競',url:'https://lolesports.com/',publishedAt:new Date().toISOString()},
+const FALLBACK_NEWS=[
+  {id:'fallback-1',title:'World Cup model updates continue after opening matches',titleZh:'世界盃開賽後，模型預測持續依賽果動態更新',source:'fallback',sourceLabel:'SignalEdge',sport:'足球',url:'https://www.fifa.com/',publishedAt:new Date().toISOString()},
+  {id:'fallback-2',title:'International League of Legends teams prepare for MSI',titleZh:'MSI 國際賽隊伍備戰，版本理解與賽區強度成焦點',source:'fallback',sourceLabel:'SignalEdge',sport:'電競',url:'https://lolesports.com/',publishedAt:new Date().toISOString()},
 ];
 
-export default function NewsPage(){
+const normalize=(items=[])=>items.filter(a=>a?.title&&a?.url).map((a,i)=>({
+  ...a,
+  id:a.id||`news-${i}`,
+  titleDisplay:a.titleZh||a.titleDisplay||localZhTitle(a.title),
+  sport:a.sport||detectSport(a.title),
+  sourceLabel:a.sourceLabel||SOURCE_LABELS[a.source]||a.source||'外媒',
+}));
+
+export default function NewsPage({ role }){
   const [news,setNews]=useState([]);
   const [loading,setLoading]=useState(true);
+  const [refreshing,setRefreshing]=useState(false);
   const [filter,setFilter]=useState('全部');
-  const [error,setError]=useState('');
+  const [notice,setNotice]=useState('');
+  const isAdmin=role==='admin'||role==='super_admin';
 
-  useEffect(()=>{
-    const load=async()=>{
-      setLoading(true);setError('');
-      try{
-        try{
-          const mod=await import('../services/firestore.js');
-          const cached=await mod.getCachedNews?.();
-          if(cached?.articles?.length){
-            setNews(cached.articles.map((a,i)=>({...a,id:a.id||`cached-${i}`,sport:a.sport||detectSport(a.title),sourceLabel:a.sourceLabel||SOURCE_LABELS[a.source]||a.source||'外媒'})));
-            setLoading(false);return;
-          }
-        }catch(e){ console.warn('[NewsPage] cache skipped:', e.message); }
+  const loadCache=async()=>{
+    try{
+      const mod=await import('../services/firestore.js');
+      const cached=await timeout(mod.getCachedNews?.(),1500,null);
+      if(cached?.articles?.length){
+        setNews(normalize(cached.articles));
+        setNotice(cached.refreshedAt?.toDate ? `新聞快取更新：${cached.refreshedAt.toDate().toLocaleString('zh-TW')}` : '已載入最新新聞快取');
+        return true;
+      }
+    }catch(e){console.warn('[NewsPage] cache skipped:',e.message);}
+    return false;
+  };
 
-        const r=await clientTimeout(fetch('/api/gateway',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({source:'news',action:'getLatest',params:{limit:30,translate:'safe'}})}),22000,'新聞 Gateway 回應逾時');
-        const d=await r.json().catch(()=>({}));
-        if(!r.ok||d.success===false) throw new Error(d.error||`HTTP ${r.status}`);
-        const articles=(d.result?.articles||[]).filter(a=>a.title&&a.url).map((a,i)=>({
-          ...a,id:a.id||`api-${i}`,sport:a.sport||detectSport(a.title),sourceLabel:a.sourceLabel||SOURCE_LABELS[a.source]||a.source||'外媒',
-        }));
-        if(articles.length) setNews(articles); else { setNews(FALLBACK_NEWS); setError('目前 RSS 沒有回傳可用新聞，先顯示備援新聞。'); }
-      }catch(e){
-        console.warn('[NewsPage] load failed:',e.message);
-        setNews(FALLBACK_NEWS);
-        setError(`新聞來源暫時無法連線：${e.message || '未知錯誤'}`);
-      }finally{setLoading(false);}
-    };
-    load();
-  },[]);
+  const refreshLive=async({silent=false}={})=>{
+    if(!silent)setRefreshing(true);
+    try{
+      const r=await timeout(fetch('/api/gateway',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({source:'news',action:'getLatest',params:{limit:30,translate:'safe'}})}),9000,null);
+      if(!r) throw new Error('新聞來源回應逾時');
+      const d=await r.json().catch(()=>({}));
+      if(!r.ok||d.success===false) throw new Error(d.error||`HTTP ${r.status}`);
+      const articles=normalize(d.result?.articles||[]);
+      if(articles.length){
+        setNews(articles);
+        setNotice('已更新即時新聞');
+        try{const mod=await import('../services/firestore.js');await mod.setCachedNews?.({articles,refreshedAt:new Date()});}catch{}
+      }
+    }catch(e){
+      if(!silent)setNotice(`新聞暫時無法即時更新，已顯示快取或備援內容。`);
+      console.warn('[NewsPage] live refresh skipped:',e.message);
+    }finally{if(!silent)setRefreshing(false);}
+  };
 
-  const sports=['全部',...Array.from(new Set(news.map(n=>n.sport).filter(Boolean)))];
+  const adminRefreshCache=async()=>{
+    setRefreshing(true);
+    try{
+      const r=await fetch('/api/cron/refresh-news',{method:'POST',headers:{'Content-Type':'application/json','x-admin-trigger':'1'}});
+      const d=await r.json().catch(()=>({}));
+      if(!r.ok||d.success===false) throw new Error(d.error||`HTTP ${r.status}`);
+      setNotice(`新聞快取已更新，共 ${d.total||0} 則`);
+      await loadCache();
+    }catch(e){setNotice('更新新聞快取失敗：'+e.message);}finally{setRefreshing(false);}
+  };
+
+  useEffect(()=>{(async()=>{setLoading(true);const ok=await loadCache();if(!ok){setNews(FALLBACK_NEWS);setNotice('新聞快取尚未建立，先顯示重點摘要；系統會在背景更新。');refreshLive({silent:true});}else{refreshLive({silent:true});}setLoading(false);})();},[]);
+
+  const sports=useMemo(()=>['全部',...Array.from(new Set(news.map(n=>n.sport).filter(Boolean)))],[news]);
   const filtered=news.filter(n=>filter==='全部'||n.sport===filter);
 
-  return(
-    <div style={{background:C.bg,minHeight:'100vh'}}>
-      <div style={{maxWidth:1000,margin:'0 auto',padding:'28px 20px'}}>
-        <div style={{marginBottom:22}}>
-          <div style={{fontSize:11,fontWeight:700,letterSpacing:1.5,color:C.amber,marginBottom:6,textTransform:'uppercase'}}>即時新聞</div>
-          <h2 style={{fontSize:26,fontWeight:900,color:C.dark,margin:'0 0 4px'}}>國際媒體速報</h2>
-          <p style={{color:C.muted,fontSize:13,margin:0}}>ESPN · BBC · Dot Esports · Goal.com · HLTV · 後端代理 RSS · AI 可用時翻譯前幾則標題</p>
-        </div>
-
-        {sports.length>1&&(
-          <div style={{overflowX:'auto',marginBottom:16}}>
-            <div style={{display:'flex',border:`1px solid ${C.border}`,borderRadius:8,overflow:'hidden',background:C.white,width:'max-content'}}>
-              {sports.map(s=><button key={s} onClick={()=>setFilter(s)} style={{padding:'7px 16px',border:'none',cursor:'pointer',background:filter===s?C.navy:'transparent',color:filter===s?C.white:C.muted,fontSize:12,fontWeight:700,borderRight:`1px solid ${C.borderLight}`,whiteSpace:'nowrap'}}>{s}</button>)}
-            </div>
-          </div>
-        )}
-
-        {loading&&<Spinner/>}
-        {error&&<div style={{background:'#FFFBEB',border:'1px solid #FDE68A',borderRadius:8,padding:'12px 14px',color:'#92400E',fontSize:12,marginBottom:14}}>⚠️ {error}</div>}
-
-        <div style={{display:'grid',gap:8}}>
-          {!loading&&filtered.map(a=>{
-            const sc=SC[a.sport]||C.navy;
-            return(
-              <a key={a.id} href={a.url||'#'} target="_blank" rel="noopener noreferrer"
-                style={{textDecoration:'none',display:'block',background:C.white,border:`1px solid ${C.border}`,borderLeft:`4px solid ${sc}`,borderRadius:'0 9px 9px 0',padding:'12px 16px',transition:'box-shadow 0.15s'}}
-                onMouseEnter={e=>e.currentTarget.style.boxShadow='0 2px 12px rgba(15,52,96,0.08)'}
-                onMouseLeave={e=>e.currentTarget.style.boxShadow='none'}>
-                <div style={{display:'flex',gap:8,alignItems:'center',marginBottom:7,flexWrap:'wrap'}}>
-                  <span style={{background:sc+'18',color:sc,fontSize:10,fontWeight:700,padding:'2px 7px',borderRadius:3}}>{a.sport}</span>
-                  <span style={{fontSize:10,color:C.muted,fontWeight:600,background:C.panelAlt,padding:'2px 7px',borderRadius:3}}>{a.sourceLabel||SOURCE_LABELS[a.source]||a.source||'外媒'}</span>
-                  {a.publishedAt&&<span style={{fontSize:10,color:C.muted}}>{timeAgo(a.publishedAt)}</span>}
-                  <span style={{marginLeft:'auto',fontSize:10,color:C.navy,fontWeight:600}}>原文 →</span>
-                </div>
-                {a.titleZh ? <><div style={{fontSize:14,fontWeight:800,color:C.dark,marginBottom:3,lineHeight:1.45}}>{a.titleZh}</div><div style={{fontSize:11,color:C.muted,lineHeight:1.4}}>{a.title}</div></> : <div style={{fontSize:14,fontWeight:700,color:C.dark,lineHeight:1.45}}>{a.title}</div>}
-              </a>
-            );
-          })}
-        </div>
-
-        {!loading&&filtered.length===0&&(
-          <div style={{background:C.white,border:`1px solid ${C.border}`,borderRadius:9,padding:'32px',textAlign:'center',color:C.muted}}><div style={{fontSize:32,marginBottom:12}}>📰</div><div style={{fontSize:14,fontWeight:700,color:C.dark,marginBottom:6}}>暫無新聞</div></div>
-        )}
-
-        <div style={{marginTop:14,padding:'10px',background:'#EFF6FF',border:'1px solid #BFDBFE',borderRadius:8,fontSize:11,color:C.navy,textAlign:'center'}}>📰 版權屬各原始媒體所有 · 點擊開啟原文 · 標題翻譯由 AI / 快取資料提供</div>
-      </div>
+  return <div style={{background:C.bg,minHeight:'100vh'}}><div style={{maxWidth:1000,margin:'0 auto',padding:'28px 20px'}}>
+    <div style={{marginBottom:22,display:'flex',justifyContent:'space-between',alignItems:'flex-end',gap:12,flexWrap:'wrap'}}>
+      <div><div style={{fontSize:11,fontWeight:700,letterSpacing:1.5,color:C.amber,marginBottom:6,textTransform:'uppercase'}}>即時新聞</div><h2 style={{fontSize:26,fontWeight:900,color:C.dark,margin:'0 0 4px'}}>國際媒體速報</h2><p style={{color:C.muted,fontSize:13,margin:0}}>每日快取主要體育媒體重點新聞，點擊可開啟原文。</p></div>
+      <div style={{display:'flex',gap:8}}><button onClick={()=>refreshLive()} disabled={refreshing} style={{padding:'8px 12px',border:`1px solid ${C.border}`,borderRadius:7,background:C.white,cursor:'pointer',fontWeight:700,color:C.navy,fontSize:12}}>{refreshing?'更新中...':'重新整理'}</button>{isAdmin&&<button onClick={adminRefreshCache} disabled={refreshing} style={{padding:'8px 12px',border:'none',borderRadius:7,background:C.navy,color:C.white,cursor:'pointer',fontWeight:700,fontSize:12}}>更新快取</button>}</div>
     </div>
-  );
+    {sports.length>1&&<div style={{overflowX:'auto',marginBottom:16}}><div style={{display:'flex',border:`1px solid ${C.border}`,borderRadius:8,overflow:'hidden',background:C.white,width:'max-content'}}>{sports.map(s=><button key={s} onClick={()=>setFilter(s)} style={{padding:'7px 16px',border:'none',cursor:'pointer',background:filter===s?C.navy:'transparent',color:filter===s?C.white:C.muted,fontSize:12,fontWeight:700,borderRight:`1px solid ${C.borderLight}`,whiteSpace:'nowrap'}}>{s}</button>)}</div></div>}
+    {notice&&<div style={{background:'#EFF6FF',border:'1px solid #BFDBFE',borderRadius:8,padding:'10px 12px',color:C.navy,fontSize:12,marginBottom:14}}>{notice}</div>}
+    {loading&&<div style={{background:C.white,border:`1px solid ${C.border}`,borderRadius:10,padding:26,textAlign:'center',color:C.muted}}>載入新聞快取...</div>}
+    <div style={{display:'grid',gap:8}}>{!loading&&filtered.map(a=>{const sc=SC[a.sport]||C.navy;return <a key={a.id} href={a.url||'#'} target="_blank" rel="noopener noreferrer" style={{textDecoration:'none',display:'block',background:C.white,border:`1px solid ${C.border}`,borderLeft:`4px solid ${sc}`,borderRadius:'0 9px 9px 0',padding:'12px 16px',transition:'box-shadow 0.15s'}} onMouseEnter={e=>e.currentTarget.style.boxShadow='0 2px 12px rgba(15,52,96,0.08)'} onMouseLeave={e=>e.currentTarget.style.boxShadow='none'}>
+      <div style={{display:'flex',gap:8,alignItems:'center',marginBottom:7,flexWrap:'wrap'}}><span style={{background:sc+'18',color:sc,fontSize:10,fontWeight:700,padding:'2px 7px',borderRadius:3}}>{a.sport}</span><span style={{fontSize:10,color:C.muted,fontWeight:600,background:C.panelAlt,padding:'2px 7px',borderRadius:3}}>{a.sourceLabel}</span>{a.publishedAt&&<span style={{fontSize:10,color:C.muted}}>{timeAgo(a.publishedAt)}</span>}<span style={{marginLeft:'auto',fontSize:10,color:C.navy,fontWeight:600}}>原文 →</span></div>
+      <div style={{fontSize:14,fontWeight:800,color:C.dark,marginBottom:a.titleZh?3:0,lineHeight:1.45}}>{a.titleDisplay}</div>{a.titleZh&&a.titleZh!==a.title&&<div style={{fontSize:11,color:C.muted,lineHeight:1.4}}>{a.title}</div>}
+    </a>})}</div>
+    {!loading&&filtered.length===0&&<div style={{background:C.white,border:`1px solid ${C.border}`,borderRadius:9,padding:'32px',textAlign:'center',color:C.muted}}><div style={{fontSize:32,marginBottom:12}}>📰</div><div style={{fontSize:14,fontWeight:700,color:C.dark,marginBottom:6}}>暫無新聞</div></div>}
+    <div style={{marginTop:14,padding:'10px',background:'#F6F7FA',border:`1px solid ${C.border}`,borderRadius:8,fontSize:11,color:C.muted,textAlign:'center'}}>新聞內容與版權屬原始媒體所有，SignalEdge 提供標題整理與原文導覽。</div>
+  </div></div>;
 }

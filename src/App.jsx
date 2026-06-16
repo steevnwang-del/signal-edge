@@ -20,7 +20,7 @@ import { useAutoSettle } from './hooks/useAutoSettle';
 
 const DEFAULT_SETTINGS = {
   marqueeEnabled: true,
-  marqueeText: '🏆 2026世界杯分析進行中｜AI自動分析每日更新｜免費加入即可查看',
+  marqueeText: '🏆 2026 世界盃專題進行中｜每日模型更新｜免費加入即可查看完整分析',
   marqueeSpeed: 'normal',
   announcementEnabled: false,
   announcementText: '',

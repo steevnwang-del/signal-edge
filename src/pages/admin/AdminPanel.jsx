@@ -52,6 +52,85 @@ export default function AdminPanel({signals,setPreviewRole,setPage,siteSettings,
     setSP(false);alert('✅ 定價已儲存');
   };
 
+
+  const runCron = async () => {
+    try {
+      const r = await fetch('/api/cron/generate-analysis', { method:'POST', headers:{'Content-Type':'application/json','x-admin-trigger':'1'} });
+      const d = await r.json().catch(()=>({}));
+      if (!r.ok || d.success===false) throw new Error(d.error || `HTTP ${r.status}`);
+      alert(`✅ 已更新 ${d.generated || 0} 筆分析`);
+      loadStats();
+    } catch(e) { alert('更新失敗：' + e.message); }
+  };
+
+  const saveSite = async (patch) => {
+    const next = { ...(siteSettings || {}), ...patch };
+    setSiteSettings(next);
+    try { const mod = await import('../../services/firestore.js'); await mod.saveSettings?.(patch); } catch {}
+  };
+
+  const renderSignals = () => (
+    <div style={{display:'grid',gap:14}}>
+      <div style={{background:C.white,border:`1px solid ${C.border}`,borderRadius:10,padding:18,display:'flex',justifyContent:'space-between',gap:12,alignItems:'center',flexWrap:'wrap'}}>
+        <div><div style={{fontSize:15,fontWeight:900,color:C.dark}}>信號管理</div><div style={{fontSize:12,color:C.muted,marginTop:4}}>管理首頁與賽事分析頁顯示的分析卡。正式資料由 cron / Admin 更新產生。</div></div>
+        <button onClick={runCron} style={{background:C.navy,color:C.white,border:'none',borderRadius:8,padding:'10px 16px',cursor:'pointer',fontWeight:800}}>更新今日分析</button>
+      </div>
+      <div style={{background:C.white,border:`1px solid ${C.border}`,borderRadius:10,overflow:'hidden'}}>
+        {(signals||[]).slice(0,10).map((x,i)=><div key={x.id||i} style={{padding:'12px 16px',borderBottom:i<Math.min((signals||[]).length,10)-1?`1px solid ${C.border}`:'none',display:'flex',justifyContent:'space-between',gap:10,alignItems:'center'}}><div><div style={{fontSize:13,fontWeight:800,color:C.dark}}>{x.home||x.homeTeam||'主隊'} vs {x.away||x.awayTeam||'客隊'}</div><div style={{fontSize:11,color:C.muted}}>{x.sport||'賽事'} · {x.decision||x.status||'WAIT'} · EV {x.ev ?? '—'}%</div></div><button onClick={()=>setPage('dashboard')} style={{border:`1px solid ${C.border}`,background:C.white,borderRadius:6,padding:'6px 10px',cursor:'pointer',fontSize:11,fontWeight:700,color:C.navy}}>查看</button></div>)}
+        {(!signals||signals.length===0)&&<div style={{padding:30,textAlign:'center',color:C.muted,fontSize:13}}>目前沒有前端信號資料，請先執行「更新今日分析」。</div>}
+      </div>
+    </div>
+  );
+
+  const renderSettle = () => (
+    <div style={{background:C.white,border:`1px solid ${C.border}`,borderRadius:10,padding:18}}>
+      <div style={{fontSize:15,fontWeight:900,color:C.dark,marginBottom:6}}>快速結算</div>
+      <div style={{fontSize:12,color:C.muted,marginBottom:14}}>賽後可將分析標記為 win / loss，供回測頁統計。正式上線後建議改為後端驗證。</div>
+      <div style={{display:'grid',gap:8}}>{(signals||[]).slice(0,8).map((x,i)=><div key={x.id||i} style={{display:'flex',justifyContent:'space-between',alignItems:'center',gap:10,background:C.panelAlt,border:`1px solid ${C.border}`,borderRadius:8,padding:10}}><div style={{fontSize:13,fontWeight:800,color:C.dark}}>{x.home||'主隊'} vs {x.away||'客隊'}</div><div style={{display:'flex',gap:6}}><button onClick={async()=>{try{const mod=await import('../../services/firestore.js');x.id?await mod.updateAnalysis?.(x.id,{result:'win'}):null;alert('已標記 win');loadStats();}catch(e){alert(e.message)}}} style={{background:C.win,color:C.white,border:'none',borderRadius:6,padding:'6px 10px',cursor:'pointer',fontSize:11,fontWeight:800}}>WIN</button><button onClick={async()=>{try{const mod=await import('../../services/firestore.js');x.id?await mod.updateAnalysis?.(x.id,{result:'loss'}):null;alert('已標記 loss');loadStats();}catch(e){alert(e.message)}}} style={{background:C.loss,color:C.white,border:'none',borderRadius:6,padding:'6px 10px',cursor:'pointer',fontSize:11,fontWeight:800}}>LOSS</button></div></div>)}</div>
+    </div>
+  );
+
+  const renderAgents = () => (
+    <div style={{display:'grid',gap:14}}>
+      <div style={{background:'linear-gradient(135deg,#FFF7E6,#FFFFFF)',border:'1px solid #F5D38A',borderRadius:12,padding:20}}>
+        <div style={{fontSize:18,fontWeight:950,color:C.dark,marginBottom:6}}>全民代理計畫</div>
+        <div style={{fontSize:13,color:C.muted,lineHeight:1.8,maxWidth:760}}>每個註冊會員都可產生推廣連結；主要代理可經營社群、內容頁、活動碼與線下合作。世界盃期間用低門檻報告包吸流量，後續導向 Pro 訂閱與 B2B 看板。</div>
+        <div style={{display:'grid',gridTemplateColumns:'repeat(auto-fit,minmax(140px,1fr))',gap:10,marginTop:14}}>{[{l:'直屬訂閱佣金',v:'40%'},{l:'二級推薦佣金',v:'20%'},{l:'代理申請門檻',v:'免費加入'},{l:'主要代理',v:'人工審核'}].map(x=><div key={x.l} style={{background:C.white,border:'1px solid #F5D38A',borderRadius:10,padding:14,textAlign:'center'}}><div style={{fontSize:24,fontWeight:950,color:C.amber}}>{x.v}</div><div style={{fontSize:11,color:C.muted}}>{x.l}</div></div>)}</div>
+        <button onClick={()=>setPage('agent')} style={{marginTop:14,background:C.navy,color:C.white,border:'none',borderRadius:8,padding:'10px 16px',cursor:'pointer',fontWeight:800}}>打開代理前台頁</button>
+      </div>
+    </div>
+  );
+
+  const renderContent = () => (
+    <div style={{background:C.white,border:`1px solid ${C.border}`,borderRadius:10,padding:18}}>
+      <div style={{fontSize:15,fontWeight:900,color:C.dark,marginBottom:14}}>內容設定</div>
+      <label style={{display:'block',fontSize:12,fontWeight:700,color:C.muted,marginBottom:6}}>跑馬燈文字</label>
+      <input value={siteSettings?.marqueeText||''} onChange={e=>setSiteSettings(p=>({...p,marqueeText:e.target.value}))} style={{width:'100%',boxSizing:'border-box',padding:'10px 12px',border:`1px solid ${C.border}`,borderRadius:8,marginBottom:12}}/>
+      <label style={{display:'flex',gap:8,alignItems:'center',fontSize:13,color:C.dark,marginBottom:12}}><input type="checkbox" checked={siteSettings?.marqueeEnabled!==false} onChange={e=>setSiteSettings(p=>({...p,marqueeEnabled:e.target.checked}))}/> 啟用跑馬燈</label>
+      <label style={{display:'flex',gap:8,alignItems:'center',fontSize:13,color:C.dark,marginBottom:16}}><input type="checkbox" checked={!!siteSettings?.playerSearchEnabled} onChange={e=>setSiteSettings(p=>({...p,playerSearchEnabled:e.target.checked}))}/> 啟用選手搜尋入口</label>
+      <button onClick={()=>saveSite({marqueeText:siteSettings?.marqueeText,marqueeEnabled:siteSettings?.marqueeEnabled,playerSearchEnabled:siteSettings?.playerSearchEnabled})} style={{background:C.navy,color:C.white,border:'none',borderRadius:8,padding:'10px 18px',cursor:'pointer',fontWeight:800}}>儲存內容設定</button>
+    </div>
+  );
+
+  const renderAds = () => (
+    <div style={{background:C.white,border:`1px solid ${C.border}`,borderRadius:10,padding:18}}>
+      <div style={{fontSize:15,fontWeight:900,color:C.dark,marginBottom:6}}>廣告管理</div><div style={{fontSize:12,color:C.muted,marginBottom:14}}>先保留廣告欄位，正式接入時可放 Google AdSense、品牌贊助或世界盃活動橫幅。</div>
+      <textarea value={(siteSettings?.ads||[]).map(a=>a.title||a).join('\n')} onChange={e=>setSiteSettings(p=>({...p,ads:e.target.value.split('\n').filter(Boolean).map(title=>({title,enabled:true}))}))} placeholder={'例如：世界盃專題贊助橫幅\n例如：運動酒吧合作活動'} style={{width:'100%',minHeight:110,boxSizing:'border-box',padding:12,border:`1px solid ${C.border}`,borderRadius:8,marginBottom:12}}/>
+      <button onClick={()=>saveSite({ads:siteSettings?.ads||[]})} style={{background:C.navy,color:C.white,border:'none',borderRadius:8,padding:'10px 18px',cursor:'pointer',fontWeight:800}}>儲存廣告設定</button>
+    </div>
+  );
+
+  const renderSettings = () => (
+    <div style={{background:C.white,border:`1px solid ${C.border}`,borderRadius:10,padding:18}}>
+      <div style={{fontSize:15,fontWeight:900,color:C.dark,marginBottom:10}}>系統設定</div>
+      <div style={{display:'grid',gap:10,fontSize:13,color:C.dark}}>
+        <div style={{background:C.panelAlt,border:`1px solid ${C.border}`,borderRadius:8,padding:12}}>新聞快取：建議 Vercel Cron 每 4 小時執行 <code>/api/cron/refresh-news</code></div>
+        <div style={{background:C.panelAlt,border:`1px solid ${C.border}`,borderRadius:8,padding:12}}>分析更新：建議每日固定執行 <code>/api/cron/generate-analysis</code></div>
+        <div style={{background:C.panelAlt,border:`1px solid ${C.border}`,borderRadius:8,padding:12}}>後台 Prompt：cron 產生分析會讀取 Firestore <code>settings/site.promptTemplates</code>；手動卡片分析走固定 DATA_BLOCK。</div>
+      </div>
+    </div>
+  );
+
   return(
     <div style={{background:C.bg,minHeight:'100vh'}}>
       <div style={{maxWidth:1100,margin:'0 auto',padding:'24px 16px'}}>
@@ -164,13 +243,12 @@ export default function AdminPanel({signals,setPreviewRole,setPage,siteSettings,
         {tab==='backtest'&&<BacktestPanel/>}
         {tab==='api'&&<APISettings/>}
         {tab==='prompt'&&<PromptSettings/>}
-        {['signals','settle','agents','content','ads','settings'].includes(tab)&&(
-          <div style={{background:C.white,borderRadius:10,padding:'32px',textAlign:'center',border:`1px solid ${C.border}`,color:C.muted}}>
-            <div style={{fontSize:32,marginBottom:12}}>🔧</div>
-            <div style={{fontSize:14,fontWeight:700,color:C.dark,marginBottom:8}}>{TABS.find(t=>t[0]===tab)?.[1]}</div>
-            <div style={{fontSize:12}}>串接 Firestore 後完整啟用</div>
-          </div>
-        )}
+        {tab==='signals'&&renderSignals()}
+        {tab==='settle'&&renderSettle()}
+        {tab==='agents'&&renderAgents()}
+        {tab==='content'&&renderContent()}
+        {tab==='ads'&&renderAds()}
+        {tab==='settings'&&renderSettings()}
       </div>
     </div>
   );
