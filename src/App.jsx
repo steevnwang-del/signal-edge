@@ -45,8 +45,18 @@ const DEFAULT_SETTINGS = {
 const PROTECTED = ['dashboard','signal-detail','agent','community'];
 const hasAdminAccess = (r) => r==='admin'||r==='super_admin';
 
+const PAGE_TO_PATH = {
+  landing:'/', login:'/login', dashboard:'/dashboard', teams:'/teams', calendar:'/calendar', news:'/news',
+  players:'/players', agent:'/invite', upgrade:'/upgrade', admin:'/admin', community:'/community', 'signal-detail':'/analysis'
+};
+const PATH_TO_PAGE = {
+  '/':'landing', '/login':'login', '/dashboard':'dashboard', '/teams':'teams', '/calendar':'calendar', '/news':'news',
+  '/players':'players', '/invite':'agent', '/upgrade':'upgrade', '/admin':'admin', '/community':'community', '/analysis':'signal-detail'
+};
+const pageFromPath = () => PATH_TO_PAGE[window.location.pathname] || 'landing';
+
 export default function App() {
-  const [page, setPage]           = useState('landing');
+  const [page, setPage]           = useState(() => { try { return pageFromPath(); } catch { return 'landing'; } });
   const [actualRole, setActualRole] = useState('guest');
   const [previewRole, setPreviewRole] = useState(null);
   const [user, setUser]           = useState(null);
@@ -69,6 +79,15 @@ export default function App() {
         setPage('login');
       }
     } catch {}
+  }, []);
+
+  useEffect(() => {
+    const onPop = () => {
+      const next = pageFromPath();
+      setPage(next);
+    };
+    window.addEventListener('popstate', onPop);
+    return () => window.removeEventListener('popstate', onPop);
   }, []);
 
   useEffect(() => {
@@ -109,16 +128,24 @@ export default function App() {
     return () => { try{unsub();}catch{} };
   }, []);
 
-  const goPage = (pg) => {
+  const goPage = (pg, { replace = false } = {}) => {
     if (pg !== 'admin' && isPreviewMode) setPreviewRole(null);
-    if (PROTECTED.includes(pg) && !user) { setPage('login'); return; }
-    if (pg === 'admin' && !hasAdminAccess(actualRole)) return;
-    setPage(pg);
+    const target = (PROTECTED.includes(pg) && !user) ? 'login' : pg;
+    if (target === 'admin' && !hasAdminAccess(actualRole)) return;
+    setPage(target);
+    try {
+      const path = PAGE_TO_PATH[target] || '/';
+      const current = window.location.pathname + window.location.search;
+      if (current !== path) {
+        const fn = replace ? 'replaceState' : 'pushState';
+        window.history[fn]({ page: target }, '', path);
+      }
+    } catch {}
   };
 
   const handleLogout = async () => {
     try{await logout();}catch{}
-    setUser(null); setActualRole('guest'); setPreviewRole(null); setPage('landing');
+    setUser(null); setActualRole('guest'); setPreviewRole(null); setPage('landing'); try { window.history.pushState({ page:'landing' }, '', '/'); } catch {}
   };
 
   const handleSetPreviewRole = (r) => {

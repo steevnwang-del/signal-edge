@@ -1,32 +1,23 @@
 // V6B-1 Cron / Admin manual trigger
 // Data first: normalize upcoming odds into canonical events, run deterministic model, then ask AI only to narrate DATA_BLOCK.
 
-import { initializeApp, getApps } from 'firebase/app';
-import { getFirestore, collection, setDoc, doc, serverTimestamp } from 'firebase/firestore';
 import aiProvider from '../../lib/sources/aiProvider.js';
-import { getAdminDB, adminTimestamp } from '../../lib/server/firebaseAdmin.js';
+import { getAdminDB, getAdminInitStatus, adminTimestamp } from '../../lib/server/firebaseAdmin.js';
 import { buildAnalysisFromOddsEvent, buildPromptFromDataBlock, fallbackNarrative, SPORT_MAP } from '../../lib/core/analysisBuilder.js';
 import { taipeiWindow, taipeiDateKey } from '../../lib/core/timeBuckets.js';
 
-const initClientFirebase = () => {
-  if (getApps().length > 0) return getApps()[0];
-  const cfg = {
-    apiKey: process.env.VITE_FIREBASE_API_KEY,
-    authDomain: process.env.VITE_FIREBASE_AUTH_DOMAIN,
-    projectId: process.env.VITE_FIREBASE_PROJECT_ID,
-    storageBucket: process.env.VITE_FIREBASE_STORAGE_BUCKET,
-    messagingSenderId: process.env.VITE_FIREBASE_MESSAGING_SENDER_ID,
-    appId: process.env.VITE_FIREBASE_APP_ID,
-  };
-  if (!cfg.apiKey || !cfg.projectId) throw new Error('Firebase Web config missing');
-  return initializeApp(cfg);
-};
-
 const getWritableDB = () => {
   const adminDb = getAdminDB(process.env);
-  if (adminDb) return { type: 'admin', db: adminDb };
-  try { return { type: 'client', db: getFirestore(initClientFirebase()) }; }
-  catch (e) { console.warn('[Cron] Firestore init failed:', e.message); return { type: 'none', db: null }; }
+  if (adminDb) return { type: 'admin', db: adminDb, adminStatus: getAdminInitStatus(process.env) };
+  return { type: 'none', db: null, adminStatus: getAdminInitStatus(process.env) };
+};
+
+const requireWritableDB = () => {
+  const ctx = getWritableDB();
+  if (!ctx.db) {
+    throw new Error(`Firebase Admin 未啟用，無法寫入快取。${ctx.adminStatus?.lastError || '請確認 Vercel Production 的 FIREBASE_SERVICE_ACCOUNT_JSON，設定後重新 Deploy。'}`);
+  }
+  return ctx;
 };
 
 const readSiteSettings = async (ctx) => {
@@ -41,21 +32,13 @@ const readSiteSettings = async (ctx) => {
 };
 
 const writeCache = async (ctx, id, data) => {
-  if (!ctx?.db) return;
-  if (ctx.type === 'admin') {
-    await ctx.db.collection('cache').doc(id).set({ ...data, updatedAt: adminTimestamp() }, { merge: true });
-    return;
-  }
-  await setDoc(doc(ctx.db, 'cache', id), { ...data, updatedAt: new Date() }, { merge: true });
+  if (!ctx?.db) throw new Error('Firestore Admin DB 未初始化');
+  await ctx.db.collection('cache').doc(id).set({ ...data, updatedAt: adminTimestamp() }, { merge: true });
 };
 
 const writeAnalysis = async (ctx, id, data) => {
-  if (!ctx?.db || !id) return null;
-  if (ctx.type === 'admin') {
-    await ctx.db.collection('analyses').doc(id).set({ ...data, updatedAt: adminTimestamp(), createdAt: data.createdAt || adminTimestamp() }, { merge: true });
-    return id;
-  }
-  await setDoc(doc(collection(ctx.db, 'analyses'), id), { ...data, updatedAt: serverTimestamp(), createdAt: serverTimestamp() }, { merge: true });
+  if (!ctx?.db || !id) throw new Error('Firestore Admin DB 未初始化');
+  await ctx.db.collection('analyses').doc(id).set({ ...data, updatedAt: adminTimestamp(), createdAt: data.createdAt || adminTimestamp() }, { merge: true });
   return id;
 };
 
@@ -116,7 +99,10 @@ export default async function handler(req, res) {
   if (!isAuthorized(req)) return res.status(401).json({ success: false, error: 'Unauthorized' });
   if (!process.env.ODDS_API_KEY) return res.status(500).json({ success: false, error: 'ODDS_API_KEY 未設定' });
 
-  const dbCtx = getWritableDB();
+  let dbCtx;
+  try { dbCtx = requireWritableDB(); }
+  catch (e) { return res.status(500).json({ success: false, error: e.message, adminStatus: getAdminInitStatus(process.env) }); }
+
   const siteSettings = await readSiteSettings(dbCtx);
   const autoCount = Number(siteSettings?.analysisSettings?.autoGenerateCount || 18);
   const now = new Date();
@@ -196,6 +182,7 @@ export default async function handler(req, res) {
       results,
     });
   } catch (e) {
-    res.status(500).json({ success: false, error: e.message, firestore: dbCtx.type, results });
+    console.error('[generate-analysis]', e);
+    res.status(500).json({ success: false, error: e.message, firestore: dbCtx?.type || 'none', adminStatus: getAdminInitStatus(process.env), results });
   }
 }

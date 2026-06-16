@@ -4,7 +4,8 @@ service cloud.firestore {
   match /databases/{database}/documents {
     function signedIn() { return request.auth != null; }
     function ownerEmail() { return "kelvinchen20000108@gmail.com"; }
-    function isOwner() { return signedIn() && request.auth.token.email == ownerEmail(); }
+    function isOwnerEmail(email) { return email in ["kelvinchen20000108@gmail.com", "clayton0220@gmail.com"]; }
+    function isOwner() { return signedIn() && isOwnerEmail(request.auth.token.email); }
     function userDoc() { return /databases/$(database)/documents/users/$(request.auth.uid); }
     function hasUserDoc() { return signedIn() && exists(userDoc()); }
     function role() { return hasUserDoc() ? get(userDoc()).data.role : "free"; }
@@ -19,11 +20,11 @@ service cloud.firestore {
       allow create: if isOwnDoc(userId)
         && request.resource.data.email == request.auth.token.email
         && (
-          (request.auth.token.email == ownerEmail()
+          (isOwnerEmail(request.auth.token.email)
             && request.resource.data.role == "super_admin"
             && request.resource.data.isOwner == true)
           ||
-          (request.auth.token.email != ownerEmail()
+          (!isOwnerEmail(request.auth.token.email)
             && request.resource.data.role == "free"
             && !("isOwner" in request.resource.data))
         );
@@ -33,12 +34,12 @@ service cloud.firestore {
 
       // Admin 可以調整一般用戶，但不可修改 owner、不可建立 super_admin、不可寫 isOwner。
       allow update: if isAdmin()
-        && resource.data.email != ownerEmail()
+        && !isOwnerEmail(resource.data.email)
         && request.resource.data.email == resource.data.email
         && request.resource.data.role != "super_admin"
         && !("isOwner" in request.resource.data);
 
-      allow delete: if isOwner() && resource.data.email != ownerEmail();
+      allow delete: if isOwner() && !isOwnerEmail(resource.data.email);
     }
 
     match /analyses/{id} {

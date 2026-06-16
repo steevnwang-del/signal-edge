@@ -89,7 +89,12 @@ export const getApiUsage = async ({ period = 'day', limitN = 60 } = {}) => {
     const q = query(collection(getDB(), col), orderBy('updatedAt', 'desc'), fsLimit(limitN));
     const s = await getDocs(q);
     return s.docs.map(d => ({ id: d.id, ...d.data() }));
-  } catch (e) { warn('getApiUsage', e); return []; }
+  } catch (e) {
+    // Some admins may not have refreshed Firestore rules or owner custom document yet.
+    // Avoid noisy console spam; the Admin UI will show an empty state instead.
+    if (!/permission|PERMISSION/i.test(e?.message || '')) warn('getApiUsage', e);
+    return [];
+  }
 };
 
 export const recordClientEvent = async (name, data = {}) => {

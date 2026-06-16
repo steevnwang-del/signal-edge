@@ -2,7 +2,7 @@
 // Fetches RSS via server, translates headlines when AI is available, then stores cache/news.
 
 import news from '../../lib/sources/news.js';
-import { getAdminDB, adminTimestamp } from '../../lib/server/firebaseAdmin.js';
+import { getAdminDB, getAdminInitStatus, adminTimestamp } from '../../lib/server/firebaseAdmin.js';
 
 const isAuthorized = (req) => {
   if (process.env.CRON_SECRET && req.headers.authorization === `Bearer ${process.env.CRON_SECRET}`) return true;
@@ -18,7 +18,13 @@ export default async function handler(req, res) {
     const articles = result.articles || [];
     const db = getAdminDB(process.env);
     if (!db) {
-      return res.status(200).json({ success: true, stored: false, total: articles.length, warning: 'FIREBASE_SERVICE_ACCOUNT_JSON not configured' });
+      return res.status(500).json({
+        success: false,
+        stored: false,
+        total: articles.length,
+        error: `Firebase Admin 未啟用，新聞快取無法寫入。${getAdminInitStatus(process.env).lastError || '請設定 FIREBASE_SERVICE_ACCOUNT_JSON 並重新 Deploy。'}`,
+        adminStatus: getAdminInitStatus(process.env),
+      });
     }
     await db.collection('cache').doc('news').set({
       articles,
@@ -36,6 +42,6 @@ export default async function handler(req, res) {
     res.json({ success: true, stored: true, total: articles.length, sources: result.sources || [] });
   } catch (e) {
     console.error('[refresh-news]', e.message);
-    res.status(500).json({ success: false, error: e.message });
+    res.status(500).json({ success: false, error: e.message, adminStatus: getAdminInitStatus(process.env) });
   }
 }
