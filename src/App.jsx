@@ -180,7 +180,7 @@ export default function App() {
       {page==='upgrade' &&<UpgradePage user={user} role={role} setPage={goPage} plans={siteSettings.plans}/>}
 
       {page==='admin'&&hasAdminAccess(actualRole)&&(
-        <AdminPanel signals={liveSignals} setPreviewRole={handleSetPreviewRole} setPage={setPage}
+        <AdminPanel signals={liveSignals} setPreviewRole={handleSetPreviewRole} setPage={goPage}
           siteSettings={siteSettings} setSiteSettings={setSiteSettings}/>
       )}
 
@@ -200,3 +200,4 @@ export default function App() {
     </div>
   );
 }
+
