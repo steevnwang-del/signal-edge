@@ -176,7 +176,7 @@ export default function App() {
       {page==='landing' &&<LandingPage setPage={goPage} setRole={setActualRole} siteSettings={siteSettings}/>}
       {page==='dashboard'&&<Dashboard role={role} setPage={goPage} setSelectedSignal={setSelectedSignal} signals={liveSignals}/>}
       {page==='signal-detail'&&<SignalDetail signal={liveSelected} role={role} setPage={goPage}/>}
-      {page==='agent'   &&<AgentPanel user={user} siteSettings={siteSettings}/>}
+      {page==='agent'   &&<AgentPanel user={user} siteSettings={siteSettings} setPage={goPage}/>}
       {page==='upgrade' &&<UpgradePage user={user} role={role} setPage={goPage} plans={siteSettings.plans}/>}
 
       {page==='admin'&&hasAdminAccess(actualRole)&&(
