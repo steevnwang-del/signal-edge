@@ -83,8 +83,25 @@ service cloud.firestore {
       allow create, update, delete: if isOwner();
     }
 
+    // 邀請紀錄：登入用戶可建立，本人與 Admin 可讀
+    match /invites/{id} {
+      allow read: if isAdmin() || (signedIn() && (
+        resource.data.inviterUid == request.auth.uid ||
+        resource.data.inviteeUid == request.auth.uid
+      ));
+      allow create: if signedIn();
+      allow update, delete: if isAdmin();
+    }
+
+    // 用戶端事件日誌（邀請、點擊等）
+    match /clientEventsDaily/{id} {
+      allow read: if isAdmin();
+      allow write: if signedIn();
+    }
+
     match /{document=**} {
       allow read, write: if false;
     }
   }
 }
+
