@@ -58,6 +58,8 @@ export const getCachedOdds = async () => getCacheDoc('odds');
 export const setCachedOdds = async (data) => setCacheDoc('odds', data);
 export const getCachedNews = async () => getCacheDoc('news');
 export const setCachedNews = async (data) => setCacheDoc('news', data);
+export const getCachedInsights = async () => getCacheDoc('insights');
+export const setCachedInsights = async (data) => setCacheDoc('insights', data);
 export const getTodayDashboard = async () => getCacheDoc('todayDashboard');
 export const setTodayDashboard = async (data) => setCacheDoc('todayDashboard', data);
 

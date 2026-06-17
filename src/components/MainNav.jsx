@@ -16,6 +16,7 @@ export default function MainNav({page,role,user,setPage,onLogout,siteSettings}){
     {id:'teams',label:'隊伍',icon:'🏆'},
     {id:'calendar',label:'賽程',icon:'📅'},
     {id:'news',label:'新聞',icon:'📰'},
+    {id:'insights',label:'國際觀點',icon:'🌍'},
     ...(siteSettings?.playerSearchEnabled?[{id:'players',label:'選手',icon:'🏅'}]:[]),
   ];
 

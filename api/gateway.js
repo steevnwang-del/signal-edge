@@ -20,6 +20,7 @@ const SOURCES = {
   polymarket: () => import('../lib/sources/polymarket.js'),
   apisports:  () => import('../lib/sources/apisports.js'),
   predictions: () => import('../lib/sources/predictions.js'),
+  insights:    () => import('../lib/sources/insights.js'),
 };
 
 const dateKey = () => new Date().toISOString().slice(0, 10);
@@ -78,13 +79,20 @@ const ALLOWED_ORIGIN = process.env.VITE_APP_URL || 'https://signal-edge-hews.ver
 // Admin-only sources that should not be called from frontend
 const ADMIN_ONLY_SOURCES = ['aiProvider', 'gemini', 'groq'];
 
+const isAdminGatewayRequest = (req) => {
+  if (process.env.CRON_SECRET && req.headers.authorization === `Bearer ${process.env.CRON_SECRET}`) return true;
+  if (process.env.ADMIN_API_SECRET && req.headers['x-admin-secret'] === process.env.ADMIN_API_SECRET) return true;
+  if (process.env.NODE_ENV !== 'production' && req.headers['x-admin-trigger']) return true;
+  return false;
+};
+
 export default async function handler(req, res) {
   // CORS - only allow our own domain
   const origin = req.headers.origin || '';
   const isAllowedOrigin = origin.includes('signal-edge') || origin.includes('localhost') || !origin;
   res.setHeader('Access-Control-Allow-Origin', isAllowedOrigin ? origin : ALLOWED_ORIGIN);
   res.setHeader('Access-Control-Allow-Methods', 'POST, GET, OPTIONS');
-  res.setHeader('Access-Control-Allow-Headers', 'Content-Type');
+  res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization, X-Admin-Secret');
   if (req.method === 'OPTIONS') return res.status(200).end();
 
   // Rate limiting
@@ -94,7 +102,7 @@ export default async function handler(req, res) {
   }
 
   if (req.method === 'GET') {
-    return res.json({ status: 'ok', version: '6B' });
+    return res.json({ status: 'ok', version: '6D' });
   }
 
   if (req.method !== 'POST') return res.status(405).json({ error: 'Method not allowed' });
@@ -107,6 +115,15 @@ export default async function handler(req, res) {
   }
   if (!SOURCES[source]) {
     return res.status(404).json({ error: `Unknown source: ${source}`, available: Object.keys(SOURCES) });
+  }
+  if (ADMIN_ONLY_SOURCES.includes(source) && !isAdminGatewayRequest(req)) {
+    await recordUsage({ source, action, ok: false, error: 'Admin-only source blocked', durationMs: Date.now() - started });
+    return res.status(403).json({
+      success: false,
+      source,
+      action,
+      error: 'This AI provider is server/admin-only. Frontend calls are blocked to protect AI quota.',
+    });
   }
 
   try {

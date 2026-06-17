@@ -13,6 +13,7 @@ import AdminPanel from './pages/admin/AdminPanel';
 import PlayerSearch from './pages/PlayerSearch';
 import TeamAnalysis from './pages/TeamAnalysis';
 import NewsPage from './pages/NewsPage';
+import InternationalInsights from './pages/InternationalInsights';
 import CalendarPage from './pages/CalendarPage';
 import CommunityPage from './pages/CommunityPage';
 import UpgradePage from './pages/UpgradePage';
@@ -46,11 +47,11 @@ const PROTECTED = ['dashboard','signal-detail','agent','community'];
 const hasAdminAccess = (r) => r==='admin'||r==='super_admin';
 
 const PAGE_TO_PATH = {
-  landing:'/', login:'/login', dashboard:'/dashboard', teams:'/teams', calendar:'/calendar', news:'/news',
+  landing:'/', login:'/login', dashboard:'/dashboard', teams:'/teams', calendar:'/calendar', news:'/news', insights:'/insights',
   players:'/players', agent:'/invite', upgrade:'/upgrade', admin:'/admin', community:'/community', 'signal-detail':'/analysis'
 };
 const PATH_TO_PAGE = {
-  '/':'landing', '/login':'login', '/dashboard':'dashboard', '/teams':'teams', '/calendar':'calendar', '/news':'news',
+  '/':'landing', '/login':'login', '/dashboard':'dashboard', '/teams':'teams', '/calendar':'calendar', '/news':'news', '/insights':'insights',
   '/players':'players', '/invite':'agent', '/upgrade':'upgrade', '/admin':'admin', '/community':'community', '/analysis':'signal-detail'
 };
 const pageFromPath = () => PATH_TO_PAGE[window.location.pathname] || 'landing';
@@ -193,6 +194,7 @@ export default function App() {
       )}
       {page==='teams'    &&<TeamAnalysis role={role}/>}
       {page==='news'     &&<NewsPage role={role}/>}
+      {page==='insights' &&<InternationalInsights role={role}/>}
       {page==='calendar' &&<CalendarPage role={role}/>}
       {page==='community'&&<CommunityPage/>}
 
