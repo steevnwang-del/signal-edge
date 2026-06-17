@@ -3,7 +3,7 @@
 
 import aiProvider from '../../lib/sources/aiProvider.js';
 import predictionsSource, { getApiFootballKey } from '../../lib/sources/predictions.js';
-import { matchInsightsToEvent, matchAnalystsToEvent } from '../../lib/sources/insights.js';
+import { matchInsightsToEvent, matchAnalystsToEvent, matchAnalystPicksToEvent } from '../../lib/sources/insights.js';
 import { getAdminDB, getAdminInitStatus, adminTimestamp } from '../../lib/server/firebaseAdmin.js';
 import { buildAnalysisFromOddsEvent, buildPromptFromDataBlock, fallbackNarrative, SPORT_MAP } from '../../lib/core/analysisBuilder.js';
 import { taipeiWindow, taipeiDateKey } from '../../lib/core/timeBuckets.js';
@@ -306,6 +306,7 @@ export default async function handler(req, res) {
     const allPredictions = flattenPredictions(predictionBundle);
     const insightArticles = insightsCache?.articles || [];
     const analystRadar = insightsCache?.analystRadar || [];
+    const analystPicks = insightsCache?.analystPicks || insightsCache?.foreignAnalystPicks || [];
 
     const normalized = odds.events
       .map(ev => buildAnalysisFromOddsEvent(ev, {
@@ -313,6 +314,7 @@ export default async function handler(req, res) {
         externalPrediction: findPredictionForEvent(ev, allPredictions),
         insights: matchInsightsToEvent(insightArticles, ev),
         analystSignals: matchAnalystsToEvent(analystRadar, ev),
+        analystPicks: matchAnalystPicksToEvent(analystPicks, ev),
       }))
       .filter(Boolean)
       .sort((a, b) => new Date(a.commence_time || 0) - new Date(b.commence_time || 0));
@@ -365,6 +367,7 @@ export default async function handler(req, res) {
           externalPrediction: enrichedDataBlock.externalPrediction || null,
           internationalInsights: enrichedDataBlock.internationalInsights || [],
           analystSignals: enrichedDataBlock.analystSignals || [],
+          foreignAnalystPicks: enrichedDataBlock.foreignAnalystPicks || [],
           analysis: finalText,
           provider: analysisText ? (aiResult?.provider || 'aiProvider') : 'fallback_text',
           aiStatus: analysisText ? 'done' : 'fallback',
