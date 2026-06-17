@@ -13,6 +13,10 @@ const normalize=(s={})=>({
   ev:Number(s.ev??s.dataBlock?.ev??0),edge:Number(s.edge??s.dataBlock?.edge??0),confidence:Number(s.confidence??s.dataBlock?.confidence??0),dataCompleteness:Number(s.dataCompleteness??s.dataBlock?.dataCompleteness??0),risk:Number(s.risk??s.dataBlock?.risk??0),
   topScores:s.topScores||s.dataBlock?.topScores||[],marketRows:s.marketRows||s.dataBlock?.marketRows||[],cancelConditions:s.cancelConditions||s.dataBlock?.cancelConditions||[],sourceCoverage:s.sourceCoverage||s.dataBlock?.sourceCoverage||{},
   analysis:s.analysis||'',xg:s.xg||s.dataBlock?.xg||null,over25:s.over25??s.dataBlock?.over25,btts:s.btts??s.dataBlock?.btts,
+  foreignMasters:s.foreignMasters||s.dataBlock?.foreignMasters||[], foreignMasterConsensus:s.foreignMasterConsensus||s.dataBlock?.foreignMasterConsensus||null,
+  signalFusion:s.signalFusion||s.dataBlock?.signalFusion||null, contentQuality:s.contentQuality||s.dataBlock?.contentQuality||null,
+  qualityScore:Number(s.qualityScore??s.dataBlock?.qualityScore??s.contentQuality?.score??0), signalAlignmentScore:Number(s.signalAlignmentScore??s.dataBlock?.signalAlignmentScore??s.signalFusion?.alignmentScore??0),
+  qualityTags:s.qualityTags||s.dataBlock?.qualityTags||s.signalFusion?.tags||[],
 });
 const Card=({children,style={}})=><div style={{background:C.white,border:`1px solid ${C.border}`,borderRadius:12,padding:18,...style}}>{children}</div>;
 const Metric=({label,value,color=C.dark})=><div><div style={{fontSize:11,color:C.muted,fontWeight:800,marginBottom:4}}>{label}</div><div style={{fontSize:22,fontWeight:950,color,fontFamily:'ui-monospace,monospace'}}>{value}</div></div>;
@@ -33,11 +37,12 @@ export default function SignalDetail({ signal, role, setPage }) {
       <p style={{margin:0,color:C.muted,fontSize:13}}>模型版本：{s.modelVersion||'v6b'}｜方法：{s.modelNote||s.method||s.dataBlock?.method||'market calibrated model'}</p>
     </Card>
 
-    <div style={{display:'grid',gridTemplateColumns:isMobile?'1fr':'repeat(4,1fr)',gap:12,marginBottom:14}}>
+    <div style={{display:'grid',gridTemplateColumns:isMobile?'1fr':'repeat(5,1fr)',gap:12,marginBottom:14}}>
       <Card><Metric label="模型勝率" value={`${pct(s.modelHome)}${s.modelDraw?` / ${pct(s.modelDraw)}`:''} / ${pct(s.modelAway)}`} color={C.navy}/></Card>
       <Card><Metric label="市場去水" value={`${pct(s.marketHome)}${s.marketDraw?` / ${pct(s.marketDraw)}`:''} / ${pct(s.marketAway)}`}/></Card>
       <Card><Metric label="EV / Edge" value={`${s.ev>0?'+':''}${pct(s.ev)} / ${s.edge>0?'+':''}${pct(s.edge)}`} color={s.ev>0?C.win:C.loss}/></Card>
       <Card><Metric label="資料 / 信心" value={`${Math.round(s.dataCompleteness)}/${Math.round(s.confidence)}`} color={C.amber}/></Card>
+      <Card><Metric label="質量 / 一致性" value={`${Math.round(s.qualityScore||0)}/${Math.round(s.signalAlignmentScore||0)}`} color={C.navy}/></Card>
     </div>
 
     <div style={{display:'grid',gridTemplateColumns:isMobile?'1fr':'1.2fr .8fr',gap:14,marginBottom:14}}>
@@ -48,6 +53,37 @@ export default function SignalDetail({ signal, role, setPage }) {
         {s.xg&&<div style={{fontSize:13,color:C.muted,lineHeight:1.8,marginTop:8}}>xG proxy：主 {s.xg.homeXg}｜客 {s.xg.awayXg}</div>}
       </Card>
     </div>
+
+    <div style={{display:'grid',gridTemplateColumns:isMobile?'1fr':'1fr 1fr',gap:14,marginBottom:14}}>
+      <Card><div style={{fontSize:15,fontWeight:950,color:C.dark,marginBottom:10}}>內容質量與訊號一致性</div>
+        <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:10,marginBottom:10}}>
+          <div style={{background:C.panelAlt,borderRadius:10,padding:12}}><div style={{fontSize:11,color:C.muted,fontWeight:800}}>內容質量</div><div style={{fontSize:24,fontWeight:950,color:C.navy}}>{Math.round(s.qualityScore||0)}/100</div></div>
+          <div style={{background:C.panelAlt,borderRadius:10,padding:12}}><div style={{fontSize:11,color:C.muted,fontWeight:800}}>訊號一致性</div><div style={{fontSize:24,fontWeight:950,color:C.green}}>{Math.round(s.signalAlignmentScore||0)}/100</div></div>
+        </div>
+        <div style={{fontSize:12,color:C.muted,lineHeight:1.8}}>共識方向：{s.signalFusion?.referenceDirection||'待確認'}｜衝突程度：{s.signalFusion?.conflictLevel||'—'}｜質量判斷：{s.signalFusion?.verdict||s.contentQuality?.note||'待補強'}</div>
+        {s.qualityTags?.length>0&&<div style={{display:'flex',gap:6,flexWrap:'wrap',marginTop:10}}>{s.qualityTags.map(t=><span key={t} style={{fontSize:10,color:C.navy,background:'#EFF6FF',border:'1px solid #BFDBFE',borderRadius:999,padding:'3px 8px',fontWeight:900}}>{t}</span>)}</div>}
+        {s.contentQuality?.missing?.length>0&&<div style={{fontSize:11,color:C.red,lineHeight:1.6,marginTop:10}}>缺口：{s.contentQuality.missing.slice(0,5).join('、')}</div>}
+      </Card>
+      <Card><div style={{fontSize:15,fontWeight:950,color:C.dark,marginBottom:10}}>國外分析大師共識</div>
+        <div style={{fontSize:13,color:C.dark,lineHeight:1.8,marginBottom:10}}>{s.foreignMasterConsensus?.summary||'目前沒有足夠的國外分析大師觀點命中此賽事。'}</div>
+        <div style={{display:'grid',gridTemplateColumns:'repeat(3,1fr)',gap:8}}>
+          <div style={{background:C.panelAlt,borderRadius:8,padding:10}}><div style={{fontSize:10,color:C.muted,fontWeight:800}}>可用來源</div><b>{s.foreignMasterConsensus?.usableSources||0}</b></div>
+          <div style={{background:C.panelAlt,borderRadius:8,padding:10}}><div style={{fontSize:10,color:C.muted,fontWeight:800}}>共識</div><b>{s.foreignMasterConsensus?.consensusDirection||'watch'}</b></div>
+          <div style={{background:C.panelAlt,borderRadius:8,padding:10}}><div style={{fontSize:10,color:C.muted,fontWeight:800}}>分歧</div><b>{s.foreignMasterConsensus?.conflictLevel||'none'}</b></div>
+        </div>
+      </Card>
+    </div>
+
+    {s.foreignMasters?.length>0&&<Card style={{marginBottom:14}}><div style={{fontSize:15,fontWeight:950,color:C.dark,marginBottom:12}}>國外分析大師牆</div>
+      <div style={{display:'grid',gridTemplateColumns:isMobile?'1fr':'repeat(2,1fr)',gap:10}}>{s.foreignMasters.slice(0,8).map(m=><div key={m.id||m.title} style={{border:`1px solid ${C.borderLight}`,borderRadius:10,padding:12,background:C.panelAlt}}>
+        <div style={{display:'flex',justifyContent:'space-between',gap:8,marginBottom:6}}><b style={{fontSize:13,color:C.dark}}>{m.sourceName||m.sourceLabel}</b><span style={{fontSize:10,color:C.amber,fontWeight:900}}>{m.stance||'watch'}</span></div>
+        <div style={{fontSize:12,color:C.dark,lineHeight:1.55,marginBottom:6}}>{m.title||m.summaryZh||'國外分析大師觀點'}</div>
+        {m.summaryZh&&<div style={{fontSize:11,color:C.muted,lineHeight:1.55,marginBottom:6}}>{m.summaryZh}</div>}
+        <div style={{fontSize:10,color:C.muted}}>匹配 {Math.round((m.eventMatchScore||0)*100)}%｜分數 {m.masterScore||'—'}｜{m.sourceTier||'Tier 未標'}</div>
+        {m.url&&<a href={m.url} target="_blank" rel="noopener noreferrer" style={{display:'inline-block',marginTop:7,fontSize:11,color:C.navy,fontWeight:900,textDecoration:'none'}}>查看來源 →</a>}
+      </div>)}</div>
+      <div style={{marginTop:10,fontSize:11,color:C.muted}}>只顯示短摘錄、中文摘要與來源連結；SignalEdge 不搬運全文，也不把大師觀點當成保證結果。</div>
+    </Card>}
 
     {canSeeVIP?<Card style={{marginBottom:14}}><div style={{fontSize:15,fontWeight:950,color:C.dark,marginBottom:12}}>進階價格表</div><div style={{overflowX:'auto'}}><table style={{width:'100%',borderCollapse:'collapse',fontSize:13}}><thead><tr>{['方向','賠率','市場','模型','Edge','EV','最低參考'].map(h=><th key={h} style={{textAlign:'left',borderBottom:`1px solid ${C.borderLight}`,padding:'8px',color:C.muted,fontSize:11}}>{h}</th>)}</tr></thead><tbody>{(s.marketRows||[]).map(r=><tr key={r.role||r.name}><td style={{padding:'8px',fontWeight:800}}>{r.role==='home'?s.home:r.role==='away'?s.away:'平手'}</td><td style={{padding:'8px'}}>{r.odds||r.price}</td><td style={{padding:'8px'}}>{pct(r.marketProbPct)}</td><td style={{padding:'8px'}}>{pct(r.modelProbPct)}</td><td style={{padding:'8px',color:Number(r.edgePct)>0?C.win:C.loss}}>{Number(r.edgePct)>0?'+':''}{pct(r.edgePct)}</td><td style={{padding:'8px',color:Number(r.evPct)>0?C.win:C.loss}}>{Number(r.evPct)>0?'+':''}{pct(r.evPct)}</td><td style={{padding:'8px'}}>{r.minOdds||'—'}</td></tr>)}</tbody></table></div></Card>:<Card style={{marginBottom:14,textAlign:'center',color:C.muted}}>🔒 進階價格表、EV 拆解與取消條件為 VIP 內容。</Card>}
 

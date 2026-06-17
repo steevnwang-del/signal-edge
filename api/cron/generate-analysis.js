@@ -4,6 +4,7 @@
 import aiProvider from '../../lib/sources/aiProvider.js';
 import predictionsSource, { getApiFootballKey } from '../../lib/sources/predictions.js';
 import { matchInsightsToEvent, matchAnalystsToEvent, matchAnalystPicksToEvent } from '../../lib/sources/insights.js';
+import foreignMastersSource, { matchForeignMastersToEvent, buildForeignMasterConsensus } from '../../lib/sources/foreignMasters.js';
 import { getAdminDB, getAdminInitStatus, adminTimestamp } from '../../lib/server/firebaseAdmin.js';
 import { buildAnalysisFromOddsEvent, buildPromptFromDataBlock, fallbackNarrative, SPORT_MAP } from '../../lib/core/analysisBuilder.js';
 import { taipeiWindow, taipeiDateKey } from '../../lib/core/timeBuckets.js';
@@ -192,11 +193,17 @@ const fetchOdds = async ({ daysFrom = 3, region = 'eu' } = {}) => {
   const wcResult = await fetchOddsBySport('soccer_fifa_world_cup', region);
   const wcEvents = wcResult.events.map(e => ({ ...e, sport_key: e.sport_key || 'soccer_fifa_world_cup', sport_title: e.sport_title || 'FIFA World Cup 2026' }));
 
-  // 3. 合併去重（用 id 去重）
+  // 3. 補抓 V6F 六大項目中 upcoming 可能漏掉的市場（失敗時回空陣列，不中斷）
+  const extraSportKeys = ['tennis_atp', 'tennis_wta', 'motorsport_formula1', 'motorsport_f1'];
+  const extraResults = await Promise.all(extraSportKeys.map(k => fetchOddsBySport(k, region).catch(() => ({ events: [] }))));
+  const extraEvents = extraResults.flatMap(r => r.events || []);
+
+  // 4. 合併去重（用 id 去重）
   const seen = new Set(upcomingEvents.map(e => e.id));
   const allEvents = [
     ...upcomingEvents,
     ...wcEvents.filter(e => !seen.has(e.id)),
+    ...extraEvents.filter(e => !seen.has(e.id)),
   ];
 
   // Log sport_keys for debugging
@@ -204,7 +211,7 @@ const fetchOdds = async ({ daysFrom = 3, region = 'eu' } = {}) => {
   allEvents.forEach(e => { sportKeyCount[e.sport_key] = (sportKeyCount[e.sport_key] || 0) + 1; });
   console.log('[fetchOdds] sport_keys found:', JSON.stringify(sportKeyCount));
 
-  // 4. 電競靜態補充（MSI 2026，Riot API key 已過期）
+  // 5. 電競靜態補充（MSI 2026，Riot API key 已過期）
   const esportsEvents = getMSIEvents().filter(e => !seen.has(e.id));
   
   return { events: [...allEvents, ...esportsEvents], usage };
@@ -299,23 +306,33 @@ export default async function handler(req, res) {
     const odds = await fetchOdds({ daysFrom: 3, region: siteSettings?.analysisSettings?.oddsRegion || 'eu' });
     await writeCache(dbCtx, 'odds', { events: odds.events, source: 'the-odds-api', usage: odds.usage });
 
-    const [predictionBundle, insightsCache] = await Promise.all([
+    const [predictionBundle, insightsCache, foreignMastersCache] = await Promise.all([
       predictionsSource.getAll({ leagueId: 1 }, process.env).catch(e => ({ error: e.message, bsd: { predictions: [] }, apf: { predictions: [] }, total: 0 })),
       readCache(dbCtx, 'insights').catch(() => null),
+      readCache(dbCtx, 'foreignMasters').catch(() => null),
     ]);
     const allPredictions = flattenPredictions(predictionBundle);
     const insightArticles = insightsCache?.articles || [];
     const analystRadar = insightsCache?.analystRadar || [];
     const analystPicks = insightsCache?.analystPicks || insightsCache?.foreignAnalystPicks || [];
+    const autoMasterPosts = foreignMastersCache?.posts || [];
+    const manualMasterPosts = foreignMastersCache?.manualItems || foreignMastersCache?.manualPosts || [];
+    const allForeignMasterPosts = [...manualMasterPosts, ...autoMasterPosts];
 
     const normalized = odds.events
-      .map(ev => buildAnalysisFromOddsEvent(ev, {
-        now,
-        externalPrediction: findPredictionForEvent(ev, allPredictions),
-        insights: matchInsightsToEvent(insightArticles, ev),
-        analystSignals: matchAnalystsToEvent(analystRadar, ev),
-        analystPicks: matchAnalystPicksToEvent(analystPicks, ev),
-      }))
+      .map(ev => {
+        const matchedMasters = matchForeignMastersToEvent(allForeignMasterPosts, ev, { limit: 12 });
+        const masterConsensus = buildForeignMasterConsensus(matchedMasters);
+        return buildAnalysisFromOddsEvent(ev, {
+          now,
+          externalPrediction: findPredictionForEvent(ev, allPredictions),
+          insights: matchInsightsToEvent(insightArticles, ev),
+          analystSignals: matchAnalystsToEvent(analystRadar, ev),
+          analystPicks: matchAnalystPicksToEvent(analystPicks, ev),
+          foreignMasters: matchedMasters,
+          foreignMasterConsensus: masterConsensus,
+        });
+      })
       .filter(Boolean)
       .sort((a, b) => new Date(a.commence_time || 0) - new Date(b.commence_time || 0));
 
@@ -368,6 +385,13 @@ export default async function handler(req, res) {
           internationalInsights: enrichedDataBlock.internationalInsights || [],
           analystSignals: enrichedDataBlock.analystSignals || [],
           foreignAnalystPicks: enrichedDataBlock.foreignAnalystPicks || [],
+          foreignMasters: enrichedDataBlock.foreignMasters || [],
+          foreignMasterConsensus: enrichedDataBlock.foreignMasterConsensus || null,
+          signalFusion: enrichedDataBlock.signalFusion || null,
+          contentQuality: enrichedDataBlock.contentQuality || null,
+          qualityScore: enrichedDataBlock.qualityScore || null,
+          signalAlignmentScore: enrichedDataBlock.signalAlignmentScore || null,
+          qualityTags: enrichedDataBlock.qualityTags || [],
           analysis: finalText,
           provider: analysisText ? (aiResult?.provider || 'aiProvider') : 'fallback_text',
           aiStatus: analysisText ? 'done' : 'fallback',
@@ -403,14 +427,14 @@ export default async function handler(req, res) {
     await writeCache(dbCtx, 'todayDashboard', {
       dateKey: taipeiDateKey(now),
       window: { start: windowTW.start.toISOString(), end: windowTW.end.toISOString(), timezone: 'Asia/Taipei' },
-      source: 'v6d-model-cache',
-      sourceCoverage: { odds: true, predictions: allPredictions.length > 0, internationalInsights: insightArticles.length > 0, analystRadar: analystRadar.length > 0, football: Boolean(getApiFootballKey(process.env)), nba: false, mlb: false, esports: true },
-      modelVersion: 'v6d-analysis-quality-analyst-radar',
+      source: 'v6f-quality-cache',
+      sourceCoverage: { odds: true, predictions: allPredictions.length > 0, internationalInsights: insightArticles.length > 0, analystRadar: analystRadar.length > 0, foreignMasters: allForeignMasterPosts.length > 0, football: Boolean(getApiFootballKey(process.env)), nba: true, mlb: true, esports: true, tennis: true, f1: true },
+      modelVersion: 'v6f-quality-engine-foreign-master-wall',
       oddsUsage: odds.usage,
       sections: cleanSections,
       items: cleanItems,
       generatedAt: now.toISOString(),
-      note: '今日賽事只包含台灣時間今日至隔日凌晨 04:00；未來賽事與舊資料不混入今日。',
+      note: 'V6F：今日賽事只包含台灣時間今日至隔日凌晨 04:00；支援足球、LOL、NBA、MLB、網球、F1；每場帶內容質量分數與國外分析大師牆。',
     });
 
     const failed = results.filter(r => r.status === 'error').length;
@@ -422,7 +446,7 @@ export default async function handler(req, res) {
       totalCanonicalEvents: normalized.length,
       todayCount: sections.today.length,
       futureCount: sections.future.length,
-      modelVersion: 'v6d-analysis-quality-analyst-radar',
+      modelVersion: 'v6f-quality-engine-foreign-master-wall',
       time: now.toISOString(),
       results,
     });

@@ -1,60 +1,73 @@
-# SignalEdge V6E
+# SignalEdge V6F
 
-繁體中文運動賽事預測、賠率價值分析與國際觀點整理工具。
+V6F focuses on **content quality + Foreign Analyst Masters Intelligence**.
 
-## 核心定位
+## Key upgrades
 
-SignalEdge 不是報牌平台。AI 只負責把後端 `DATA_BLOCK` 寫成中文分析；勝率、EV、fair odds、最低參考價、比分分布與決策都必須由後端模型與資料流程計算。
+- Full automatic foreign analyst intelligence cache
+  - `api/cron/refresh-foreign-masters.js`
+  - `lib/sources/foreignMastersDirectory.js`
+  - `lib/sources/foreignMasters.js`
+- Event-level Foreign Masters Wall
+  - matched public RSS / metadata posts
+  - optional admin short-excerpt manual boosts
+  - consensus direction, conflict level and usable source count
+- Content quality engine
+  - data completeness
+  - source coverage
+  - signal alignment score
+  - quality score and tags
+- Six sport families supported at the model / content layer
+  - Soccer / football
+  - LOL / esports
+  - NBA
+  - MLB
+  - Tennis
+  - F1
+- AI is still DATA_BLOCK-only
+  - no invented win rates
+  - no invented EV / scores / injuries / lineups
+  - no invented analyst picks
+  - no full-text copying from foreign sites
 
-## V6E 重點
+## Cron endpoints
 
-- 國外分析大師頁：`/insights`，包含「雷達來源 / 大師觀點庫 / 國際新聞快取」
-- 國際觀點快取 API：`/api/cron/refresh-insights`
-- 世界盃 Elo + Dixon-Coles/Poisson proxy：`lib/core/worldCupElo.js`
-- 靜態 Elo priors：`lib/core/eloRatings.js`
-- `generate-analysis` 整合 The Odds API、`predictions.js`、國際觀點快取、國外分析大師觀點庫與 DATA_BLOCK
-- MSI / LOL 無賠率時保留賽事，但強制 `WAIT`，不計算投注 EV
-- `gateway` 已封鎖前台直接呼叫 `aiProvider` / `gemini` / `groq`
-- 國外分析大師觀點庫採管理員短摘錄 + 中文摘要 + 來源連結方式，AI 只能讀 DATA_BLOCK，不搬運全文、不創造大師立場
-
-## 開發
-
-```bash
-npm install
-npm run dev
+```txt
+/api/cron/refresh-news
+/api/cron/refresh-insights
+/api/cron/refresh-foreign-masters
+/api/cron/generate-analysis
 ```
 
-## 部署必要環境變數
+## Firestore cache docs
 
-前台 Firebase：
-
-```text
-VITE_FIREBASE_API_KEY
-VITE_FIREBASE_AUTH_DOMAIN
-VITE_FIREBASE_PROJECT_ID
-VITE_FIREBASE_STORAGE_BUCKET
-VITE_FIREBASE_MESSAGING_SENDER_ID
-VITE_FIREBASE_APP_ID
+```txt
+cache/news
+cache/insights
+cache/foreignMasters
+cache/odds
+cache/todayDashboard
 ```
 
-Server-side：
+`cache/foreignMasters` stores only public metadata, source links, short excerpts and SignalEdge summaries. Paid content, login-only content and full-text copying are intentionally excluded.
 
-```text
-FIREBASE_SERVICE_ACCOUNT_JSON
+## Deployment notes
+
+Required production environment variables depend on which data providers you use. At minimum the existing project expects:
+
+```txt
 ODDS_API_KEY
-GEMINI_API_KEY 或 GROQ_API_KEY
+FIREBASE_SERVICE_ACCOUNT_JSON
 CRON_SECRET
-API_SPORTS_KEY 或 API_FOOTBALL_KEY
 ```
 
-可選：
+Optional provider keys remain supported:
 
-```text
-BSD_API_KEY
-ADMIN_API_SECRET
-NEWS_API_KEY
+```txt
+API_SPORTS_KEY
+API_FOOTBALL_KEY
+GEMINI_API_KEY
+GROQ_API_KEY
 ```
 
-## 安全
-
-不要提交任何 API key、GitHub token、Firebase service account 或 `.env`。所有 AI provider 只能由 server/cron/admin secret 呼叫，前台只讀 Firestore 快取。
+`API_SPORTS_KEY` and `API_FOOTBALL_KEY` use fallback logic in the source layer.

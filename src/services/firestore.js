@@ -60,6 +60,8 @@ export const getCachedNews = async () => getCacheDoc('news');
 export const setCachedNews = async (data) => setCacheDoc('news', data);
 export const getCachedInsights = async () => getCacheDoc('insights');
 export const setCachedInsights = async (data) => setCacheDoc('insights', data);
+export const getCachedForeignMasters = async () => getCacheDoc('foreignMasters');
+export const setCachedForeignMasters = async (data) => setCacheDoc('foreignMasters', data);
 export const getTodayDashboard = async () => getCacheDoc('todayDashboard');
 export const setTodayDashboard = async (data) => setCacheDoc('todayDashboard', data);
 

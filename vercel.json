@@ -3,12 +3,14 @@
   "crons": [
     { "path": "/api/cron/generate-analysis", "schedule": "0 22 * * *" },
     { "path": "/api/cron/refresh-news", "schedule": "0 4 * * *" },
-    { "path": "/api/cron/refresh-insights", "schedule": "30 4 * * *" }
+    { "path": "/api/cron/refresh-insights", "schedule": "30 4 * * *" },
+    { "path": "/api/cron/refresh-foreign-masters", "schedule": "0 */2 * * *" }
   ],
   "functions": {
     "api/cron/generate-analysis.js": { "maxDuration": 60 },
     "api/cron/refresh-news.js": { "maxDuration": 30 },
     "api/cron/refresh-insights.js": { "maxDuration": 30 },
+    "api/cron/refresh-foreign-masters.js": { "maxDuration": 30 },
     "api/gateway.js": { "maxDuration": 30 }
   }
 }
