@@ -27,9 +27,9 @@ export default async function handler(req, res) {
     await writeCache(db, 'insights', {
       ...result,
       cacheKey: 'insights',
-      note: 'International insights are cached server-side. AI analysis may cite only matched cache items in DATA_BLOCK.',
+      note: 'International insights and analyst radar are cached server-side. AI analysis may cite only matched article text as current news; analyst radar is a verification checklist, not a pick source.',
     });
-    return res.json({ success: true, total: result.count, bySport: result.bySport, failures: result.failures, refreshedAt: result.refreshedAt });
+    return res.json({ success: true, total: result.count, analystCount: result.analystCount, bySport: result.bySport, analystBySport: result.analystBySport, failures: result.failures, refreshedAt: result.refreshedAt });
   } catch (e) {
     console.error('[refresh-insights]', e);
     return res.status(500).json({ success: false, error: e.message, adminStatus: getAdminInitStatus(process.env) });
