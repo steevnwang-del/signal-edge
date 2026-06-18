@@ -2,8 +2,8 @@ import { useEffect, useMemo, useState } from 'react';
 
 const C={navy:'#0F3460',white:'#FFFFFF',dark:'#111827',muted:'#6B7280',border:'#D4D8DF',borderLight:'#E9EBF0',bg:'#ECEEF2',amber:'#D97706',win:'#059669',loss:'#DC2626',panelAlt:'#F6F7FA'};
 const SC={世界杯:'#1B5E20',NBA:'#C9082A',MLB:'#002D72',NHL:'#002654',UFC:'#D20A0A',英超:'#3D195B',歐冠:'#003399',西甲:'#C60B1E','LOL 電競':'#7C3AED','MSI 2026':'#7C3AED'};
-const DS={BET:{bg:'#ECFDF5',color:'#059669',label:'可關注'},LEAN:{bg:'#FFFBEB',color:'#D97706',label:'偏向觀察'},WAIT:{bg:'#F6F7FA',color:'#6B7280',label:'等待確認'},NO_BET:{bg:'#FEF2F2',color:'#DC2626',label:'不追價'}};
-const SECTION_LABEL={today:'今日賽事',value:'模型有價值',watch:'觀察名單',future:'未來賽事'};
+const DS={BET:{bg:'#ECFDF5',color:'#059669',label:'價值可關注'},LEAN:{bg:'#FFFBEB',color:'#D97706',label:'偏向觀察'},WAIT:{bg:'#F6F7FA',color:'#6B7280',label:'等待確認'},NO_BET:{bg:'#FEF2F2',color:'#DC2626',label:'價值不足'}};
+const SECTION_LABEL={today:'今日賽事',highProbability:'高機率方向',value:'價值型機會',watch:'觀察名單',future:'未來賽事'};
 
 const Spin=({s=24})=><div style={{width:s,height:s,border:`2px solid ${C.border}`,borderTopColor:C.navy,borderRadius:'50%',animation:'spin 0.8s linear infinite',display:'inline-block'}}><style>{`@keyframes spin{to{transform:rotate(360deg)}}`}</style></div>;
 const pct=(n)=>Number.isFinite(Number(n))?`${Number(n).toFixed(1)}%`:'—';
@@ -33,6 +33,14 @@ const normalize=(a)=>({
   sourceCoverage:a.sourceCoverage||a.dataBlock?.sourceCoverage||{},
   modelVersion:a.modelVersion||'v6b',
   analysis:a.analysis||null,
+  decisionEngine:a.decisionEngine||a.dataBlock?.decisionEngine||null,
+  beginnerLane:a.beginnerLane||a.dataBlock?.beginnerLane||a.decisionEngine?.beginnerLane||a.dataBlock?.decisionEngine?.beginnerLane||null,
+  advancedLane:a.advancedLane||a.dataBlock?.advancedLane||a.decisionEngine?.advancedLane||a.dataBlock?.decisionEngine?.advancedLane||null,
+  bettingConditions:a.bettingConditions||a.dataBlock?.bettingConditions||a.decisionEngine?.conditions||a.dataBlock?.decisionEngine?.conditions||null,
+  probabilityScore:Number(a.probabilityScore??a.dataBlock?.probabilityScore??a.decisionEngine?.probabilityScore??a.dataBlock?.decisionEngine?.probabilityScore??0),
+  valueScore:Number(a.valueScore??a.dataBlock?.valueScore??a.decisionEngine?.valueScore??a.dataBlock?.decisionEngine?.valueScore??0),
+  riskScore:Number(a.riskScore??a.dataBlock?.riskScore??a.decisionEngine?.riskScore??a.dataBlock?.decisionEngine?.riskScore??a.risk??0),
+  decisionTags:a.decisionTags||a.dataBlock?.decisionTags||a.decisionEngine?.tags||a.dataBlock?.decisionEngine?.tags||[],
   minOdds:a.minOdds||a.dataBlock?.minOdds||null,
   bestOdds:a.bestOdds||a.dataBlock?.bestOdds||null,
   overround:a.overround||a.dataBlock?.overround||0,
@@ -61,6 +69,8 @@ function AnalysisCard({item, isVIP, isAdmin, onOpen}){
         <div style={{display:'flex',gap:6,alignItems:'center',flexWrap:'wrap'}}>
           <span style={{background:sc+'18',color:sc,fontSize:10,fontWeight:900,padding:'3px 8px',borderRadius:4}}>{a.sport}</span>
           <span style={{background:displayDS.bg,color:displayDS.color,fontSize:10,fontWeight:900,padding:'3px 9px',borderRadius:4}}>{displayDS.label}</span>
+          {a.decisionEngine?.segmentLabel&&<span style={{background:'#F5F3FF',color:'#6D28D9',fontSize:10,fontWeight:900,padding:'3px 9px',borderRadius:4}}>{a.decisionEngine.segmentLabel}</span>}
+          {a.beginnerLane?.label&&<span style={{background:'#ECFEFF',color:'#0E7490',fontSize:10,fontWeight:900,padding:'3px 9px',borderRadius:4}}>{a.beginnerLane.label}</span>}
         </div>
         <span style={{fontSize:11,color:C.amber,fontWeight:900}}>{a.timeStr}</span>
       </div>
@@ -89,7 +99,22 @@ function AnalysisCard({item, isVIP, isAdmin, onOpen}){
             </div>
         }
         <div style={{background:C.panelAlt,borderRadius:10,padding:12}}>
-          <Metric label="資料/信心" value={`${Math.round(a.dataCompleteness)}/${Math.round(a.confidence||0)}`} color={sc}/>
+          <Metric label="高機率 / 價值" value={`${Math.round(a.probabilityScore)}/${Math.round(a.valueScore)}`} color={sc}/>
+        </div>
+        <div style={{background:C.panelAlt,borderRadius:10,padding:12}}>
+          <Metric label="風險 / 資料" value={`${Math.round(a.riskScore)}/${Math.round(a.dataCompleteness)}`} color={a.riskScore>70?C.loss:C.amber}/>
+        </div>
+      </div>
+
+      {/* 雙軌決策 */}
+      <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:12,marginBottom:12}}>
+        <div style={{background:'#ECFEFF',border:'1px solid #A5F3FC',borderRadius:10,padding:12}}>
+          <div style={{fontSize:11,color:'#0E7490',fontWeight:900,marginBottom:6}}>🧭 新手 / 高機率方向</div>
+          <div style={{fontSize:13,color:C.dark,lineHeight:1.65}}><b>{a.beginnerLane?.label||'觀察'}</b>｜{a.beginnerLane?.note||'系統會依勝率穩定分、資料完整度與風險判斷。'}</div>
+        </div>
+        <div style={{background:'#FFFBEB',border:'1px solid #FDE68A',borderRadius:10,padding:12}}>
+          <div style={{fontSize:11,color:C.amber,fontWeight:900,marginBottom:6}}>💰 進階 / 價值判斷</div>
+          <div style={{fontSize:13,color:C.dark,lineHeight:1.65}}><b>{a.advancedLane?.label||'等待價格'}</b>｜{a.advancedLane?.note||'系統會依 EV、Edge、最低參考價與市場是否過熱判斷。'}</div>
         </div>
       </div>
 
@@ -112,6 +137,8 @@ function AnalysisCard({item, isVIP, isAdmin, onOpen}){
             </div>
         }
       </div>
+
+      {a.decisionTags?.length>0&&<div style={{display:'flex',gap:6,flexWrap:'wrap',marginBottom:12}}>{a.decisionTags.slice(0,8).map(t=><span key={t} style={{fontSize:10,color:C.navy,background:'#EFF6FF',border:'1px solid #BFDBFE',borderRadius:999,padding:'3px 8px',fontWeight:900}}>{t}</span>)}</div>}
 
       {/* AI 分析文字 */}
       {a.analysis
@@ -175,7 +202,7 @@ export default function Dashboard({role,setPage,setSelectedSignal}){
 
   const items=useMemo(()=>{
     const sec=cache?.sections||{};
-    const list=section==='value'?sec.value:section==='watch'?sec.watch:section==='future'?sec.future:sec.today;
+    const list=section==='highProbability'?sec.highProbability:section==='value'?sec.value:section==='watch'?sec.watch:section==='future'?sec.future:sec.today;
     return (list||[]).map(normalize).filter(a=>filter==='全部'||a.sport===filter);
   },[cache,filter,section]);
 
@@ -265,7 +292,7 @@ export default function Dashboard({role,setPage,setSelectedSignal}){
         ))}
 
         <div style={{marginTop:20,padding:'10px 12px',background:'#F8FAFC',border:`1px solid ${C.border}`,borderRadius:10,fontSize:11,color:C.muted,textAlign:'center'}}>
-          SignalEdge 顯示的是機率與價格比較，不保證賽果；WAIT / NO BET 是模型風控的一部分。
+          SignalEdge 同時提供新手高機率方向與進階價值判斷；所有內容都是機率與價格比較，不保證賽果。
         </div>
       </div>
     </div>

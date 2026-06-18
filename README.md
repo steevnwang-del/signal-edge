@@ -1,78 +1,22 @@
-# SignalEdge V6F
+# SignalEdge V6G
 
-V6F focuses on **content quality + Foreign Analyst Masters Intelligence**.
+SignalEdge V6G 是「賽事情報決策引擎」版本。
 
-## Key upgrades
+核心能力：
 
-- Full automatic foreign analyst intelligence cache
-  - `api/cron/refresh-foreign-masters.js`
-  - `lib/sources/foreignMastersDirectory.js`
-  - `lib/sources/foreignMasters.js`
-- Event-level Foreign Masters Wall
-  - matched public RSS / metadata posts
-  - optional admin short-excerpt manual boosts
-  - consensus direction, conflict level and usable source count
-- Content quality engine
-  - data completeness
-  - source coverage
-  - signal alignment score
-  - quality score and tags
-- Six sport families supported at the model / content layer
-  - Soccer / football
-  - LOL / esports
-  - NBA
-  - MLB
-  - Tennis
-  - F1
-- AI is still DATA_BLOCK-only
-  - no invented win rates
-  - no invented EV / scores / injuries / lineups
-  - no invented analyst picks
-  - no full-text copying from foreign sites
+- 國外分析大師情報庫與賽事大師牆
+- 每場賽事高機率方向與進階價值判斷雙軌輸出
+- probabilityScore / valueScore / riskScore 三分數
+- bettingConditions 下注條件與放棄條件
+- contentQuality 內容質量分數
+- signalFusion 訊號一致性分數
+- 支援足球、LOL、NBA、MLB、網球、F1
+- AI 僅能讀 DATA_BLOCK，不可自行創造勝率、EV、比分、傷病、陣容或大師推薦
 
-## Cron endpoints
+部署後建議先由管理員依序觸發：
 
-```txt
-/api/cron/refresh-news
-/api/cron/refresh-insights
-/api/cron/refresh-foreign-masters
-/api/cron/generate-analysis
-```
+1. `/api/cron/refresh-insights`
+2. `/api/cron/refresh-foreign-masters`
+3. `/api/cron/generate-analysis`
 
-## Firestore cache docs
-
-```txt
-cache/news
-cache/insights
-cache/foreignMasters
-cache/odds
-cache/todayDashboard
-```
-
-`cache/foreignMasters` stores only public metadata, source links, short excerpts and SignalEdge summaries. Paid content, login-only content and full-text copying are intentionally excluded.
-
-## Deployment notes
-
-Required production environment variables depend on which data providers you use. At minimum the existing project expects:
-
-```txt
-ODDS_API_KEY
-FIREBASE_SERVICE_ACCOUNT_JSON
-CRON_SECRET
-```
-
-Optional provider keys remain supported:
-
-```txt
-API_SPORTS_KEY
-API_FOOTBALL_KEY
-GEMINI_API_KEY
-GROQ_API_KEY
-```
-
-`API_SPORTS_KEY` and `API_FOOTBALL_KEY` use fallback logic in the source layer.
-
-
-## V6F-1 deployment hotfix
-
-This package keeps all Vercel cron schedules to once per day so Hobby deployments do not fail on cron frequency limits. For high-frequency updates, keep the API endpoints and trigger them externally with `Authorization: Bearer <CRON_SECRET>`. Cron endpoints also accept official Vercel Cron requests when `CRON_SECRET` is not configured, but setting `CRON_SECRET` in Vercel is recommended.
+正式 zip 僅包含 GitHub / Vercel 需要的正式檔案，不包含 env、node_modules、docs、PATCH_NOTES 或測試金鑰檔。

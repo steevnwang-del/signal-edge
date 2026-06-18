@@ -1,4 +1,4 @@
-// V6B-1 Cron / Admin manual trigger
+// V6G Cron / Admin manual trigger
 // Data first: normalize upcoming odds into canonical events, run deterministic model, then ask AI only to narrate DATA_BLOCK.
 
 import aiProvider from '../../lib/sources/aiProvider.js';
@@ -286,8 +286,9 @@ const buildSections = (analyses = []) => {
     today,
     future,
     past,
-    value: today.filter(a => ['BET','LEAN'].includes(a.decision)),
-    watch: today.filter(a => a.decision === 'WAIT'),
+    highProbability: today.filter(a => Number(a.probabilityScore || a.dataBlock?.probabilityScore || 0) >= 68),
+    value: today.filter(a => Number(a.valueScore || a.dataBlock?.valueScore || 0) >= 68 || ['BET','LEAN'].includes(a.decision)),
+    watch: today.filter(a => a.decision === 'WAIT' || a.beginnerLane?.status === 'WAIT' || a.advancedLane?.status === 'WATCH_PRICE'),
     lowData: today.filter(a => Number(a.dataCompleteness || 0) < 60),
   };
 };
@@ -393,6 +394,14 @@ export default async function handler(req, res) {
           foreignMasterConsensus: enrichedDataBlock.foreignMasterConsensus || null,
           signalFusion: enrichedDataBlock.signalFusion || null,
           contentQuality: enrichedDataBlock.contentQuality || null,
+          decisionEngine: enrichedDataBlock.decisionEngine || null,
+          beginnerLane: enrichedDataBlock.beginnerLane || null,
+          advancedLane: enrichedDataBlock.advancedLane || null,
+          bettingConditions: enrichedDataBlock.bettingConditions || null,
+          probabilityScore: enrichedDataBlock.probabilityScore || null,
+          valueScore: enrichedDataBlock.valueScore || null,
+          riskScore: enrichedDataBlock.riskScore || null,
+          decisionTags: enrichedDataBlock.decisionTags || [],
           qualityScore: enrichedDataBlock.qualityScore || null,
           signalAlignmentScore: enrichedDataBlock.signalAlignmentScore || null,
           qualityTags: enrichedDataBlock.qualityTags || [],
@@ -431,14 +440,14 @@ export default async function handler(req, res) {
     await writeCache(dbCtx, 'todayDashboard', {
       dateKey: taipeiDateKey(now),
       window: { start: windowTW.start.toISOString(), end: windowTW.end.toISOString(), timezone: 'Asia/Taipei' },
-      source: 'v6f-quality-cache',
+      source: 'v6g-decision-cache',
       sourceCoverage: { odds: true, predictions: allPredictions.length > 0, internationalInsights: insightArticles.length > 0, analystRadar: analystRadar.length > 0, foreignMasters: allForeignMasterPosts.length > 0, football: Boolean(getApiFootballKey(process.env)), nba: true, mlb: true, esports: true, tennis: true, f1: true },
-      modelVersion: 'v6f-quality-engine-foreign-master-wall',
+      modelVersion: 'v6g-decision-engine-quality-master-wall',
       oddsUsage: odds.usage,
       sections: cleanSections,
       items: cleanItems,
       generatedAt: now.toISOString(),
-      note: 'V6F：今日賽事只包含台灣時間今日至隔日凌晨 04:00；支援足球、LOL、NBA、MLB、網球、F1；每場帶內容質量分數與國外分析大師牆。',
+      note: 'V6G：今日賽事只包含台灣時間今日至隔日凌晨 04:00；支援足球、LOL、NBA、MLB、網球、F1；每場帶高機率分數、價值分數、風險分數、下注條件、內容質量與國外分析大師牆。',
     });
 
     const failed = results.filter(r => r.status === 'error').length;
@@ -450,7 +459,7 @@ export default async function handler(req, res) {
       totalCanonicalEvents: normalized.length,
       todayCount: sections.today.length,
       futureCount: sections.future.length,
-      modelVersion: 'v6f-quality-engine-foreign-master-wall',
+      modelVersion: 'v6g-decision-engine-quality-master-wall',
       time: now.toISOString(),
       results,
     });

@@ -38,6 +38,36 @@ const FALLBACK_SOURCES = [
   { id: 'fallback-f1', name: 'The Race F1', brand: 'The Race', sourceLabel: 'The Race', sport: 'F1', sourceType: 'analysis_editorial', tier: 'A-', url: 'https://www.the-race.com/formula-1/', useForZh: '核對 F1 車隊升級、排位節奏、策略與長距離速度。', topics: ['strategy', 'upgrades', 'long-run pace'] },
 ];
 
+const buildBootstrapPosts = (sourceList = []) => {
+  const list = sourceList.length ? sourceList : FALLBACK_SOURCES.map(normalizeSource);
+  const priority = ['足球', 'LOL', 'NBA', 'MLB', '網球', 'F1'];
+  const selected = [];
+  for (const sp of priority) {
+    const src = list.find(x => normSport(x.sport) === sp && String(x.tier || '').startsWith('A')) || list.find(x => normSport(x.sport) === sp);
+    if (src && !selected.some(s => s.id === src.id)) selected.push(src);
+  }
+  for (const src of list) {
+    if (selected.length >= 12) break;
+    if (!selected.some(s => s.id === src.id)) selected.push(src);
+  }
+  return selected.slice(0, 12).map((src, idx) => normalizePost({
+    id: `bootstrap-ui-${src.id || idx}`,
+    sourceName: src.name,
+    sourceLabel: src.sourceLabel || src.brand || src.name,
+    sport: normSport(src.sport),
+    title: `${src.name || src.sourceLabel}｜${normSport(src.sport)} 賽前對照情報卡`,
+    url: src.url || '',
+    shortExcerpt: `${src.sourceLabel || src.name} 可用於核對 ${(src.topics || []).slice(0, 4).join(' / ') || '賽前資料、模型前提與市場背景'}。此為 SignalEdge 預載來源摘要；正式更新後會優先顯示公開 RSS / metadata 的新內容。`,
+    summaryZh: `【${normSport(src.sport)}】${src.name || src.sourceLabel} 已列入國外分析大師情報庫。主要用途：${src.useForZh || '作為國外分析大師對照訊號。'} 系統會把它與賠率、fair odds、EV、Elo/Poisson、新聞風險一起交叉判斷。`,
+    signalEdgeInterpretation: '若只有項目層級訊號，模型會降權作背景參考；只有明確命中隊伍、賽事或市場方向時，才會提高進入分析的權重。',
+    stance: 'market_context',
+    confidence: String(src.tier || '').startsWith('A') ? 'medium' : 'low',
+    publishedAt: new Date(Date.now() - (idx + 1) * 3600 * 1000).toISOString(),
+    eventKeywords: [normSport(src.sport), ...(src.topics || [])],
+    isBootstrap: true,
+  }, idx));
+};
+
 const normalizeSource = (x = {}, i = 0) => ({
   ...x,
   id: x.id || `source-${i}`,
@@ -87,7 +117,7 @@ export default function InternationalInsights({ role }) {
   const [refreshing, setRefreshing] = useState(false);
   const [saving, setSaving] = useState(false);
   const [filter, setFilter] = useState('全部');
-  const [mode, setMode] = useState('sources');
+  const [mode, setMode] = useState('posts');
   const [notice, setNotice] = useState('');
   const [form, setForm] = useState(emptyManual);
   const isAdmin = role === 'admin' || role === 'super_admin';
@@ -100,12 +130,14 @@ export default function InternationalInsights({ role }) {
       const nextPosts = (fm?.posts || []).map(normalizePost);
       const nextManual = (fm?.manualItems || fm?.manualPosts || insights?.analystPicks || insights?.foreignAnalystPicks || []).map(normalizePost);
       const nextArticles = (insights?.articles || []).map(normalizeArticle);
-      setSources(nextSources.length ? nextSources : FALLBACK_SOURCES.map(normalizeSource));
-      setPosts(nextPosts);
+      const effectiveSources = nextSources.length ? nextSources : FALLBACK_SOURCES.map(normalizeSource);
+      const effectivePosts = nextPosts.length ? nextPosts : buildBootstrapPosts(effectiveSources);
+      setSources(effectiveSources);
+      setPosts(effectivePosts);
       setManual(nextManual);
       setArticles(nextArticles);
       const when = fm?.refreshedAt || insights?.refreshedAt || fm?.updatedAt || insights?.updatedAt;
-      setNotice(when ? `已載入國外分析大師情報庫，更新時間：${timeAgo(when)}` : '已載入國外分析大師情報庫；若自動情報流為空，請先執行更新。');
+      setNotice(when ? `已載入國外分析大師情報庫，更新時間：${timeAgo(when)}` : '已載入國外分析大師情報庫；目前先顯示預載情報卡，更新後會改顯示公開 RSS / metadata 新內容。');
       return true;
     } catch (e) {
       console.warn('[InternationalInsights] load skipped:', e.message);
@@ -183,7 +215,7 @@ export default function InternationalInsights({ role }) {
         <div>
           <h2 style={{ fontSize: 28, fontWeight: 950, margin: '0 0 8px' }}>國外分析大師情報庫</h2>
           <p style={{ margin: 0, color: 'rgba(255,255,255,.82)', fontSize: 13, lineHeight: 1.75 }}>
-            V6F 不是只列網站，而是自動整理公開 RSS / metadata、短摘錄、來源連結與 SignalEdge 自行摘要。每場賽事會匹配成「國外分析大師牆」，同時供用戶參考，也供模型做共識、分歧與內容質量評分。
+            V6G 不是把用戶導去別站，而是把國外分析師、新聞、用戶分享與公開資料整理成 SignalEdge 站內情報。每場賽事會匹配成「賽事情報牆」，用戶先看我們的中文摘要、共識、分歧、下注條件與二次分析。
           </p>
         </div>
         <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
@@ -207,7 +239,7 @@ export default function InternationalInsights({ role }) {
     </div>
 
     <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', marginBottom: 14 }}>
-      {tabBtn('sources', '來源雷達')}
+      {tabBtn('sources', '來源庫')}
       {tabBtn('posts', '自動情報流')}
       {tabBtn('manual', '人工補強')}
       {tabBtn('news', '國際新聞')}
@@ -220,34 +252,35 @@ export default function InternationalInsights({ role }) {
     {!loading && mode === 'sources' && <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill,minmax(320px,1fr))', gap: 12 }}>
       {filtered.map(a => {
         const sc = SC[normSport(a.sport)] || C.navy;
-        return <a key={a.id} href={a.url || '#'} target="_blank" rel="noopener noreferrer" style={{ textDecoration: 'none', color: 'inherit', display: 'block', background: C.white, border: `1px solid ${C.border}`, borderTop: `4px solid ${sc}`, borderRadius: 12, padding: '15px 16px', minHeight: 210 }}>
+        return <div key={a.id} style={{ textDecoration: 'none', color: 'inherit', display: 'block', background: C.white, border: `1px solid ${C.border}`, borderTop: `4px solid ${sc}`, borderRadius: 12, padding: '15px 16px', minHeight: 210 }}>
           <div style={{ display: 'flex', justifyContent: 'space-between', gap: 10, marginBottom: 10 }}><div style={{ display: 'flex', gap: 7, flexWrap: 'wrap' }}><Chip color={sc}>{normSport(a.sport)}</Chip><Chip color={C.muted}>{a.sourceType}</Chip></div><span style={{ fontSize: 10, color: C.amber, fontWeight: 950 }}>Tier {a.tier}</span></div>
           <div style={{ fontSize: 17, fontWeight: 950, color: C.dark, lineHeight: 1.35, marginBottom: 6 }}>{a.name}</div>
           <div style={{ fontSize: 11, color: C.muted, fontWeight: 800, marginBottom: 10 }}>{a.sourceLabel}</div>
           <div style={{ fontSize: 12, color: C.dark, lineHeight: 1.65, marginBottom: 10 }}><b>怎麼用：</b>{a.useForZh || '作為國外分析大師對照來源。'}</div>
           <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6 }}>{(a.topics || []).slice(0, 6).map(x => <Chip key={x} color={C.navy}>{x}</Chip>)}</div>
           <div style={{ fontSize: 11, color: C.red, lineHeight: 1.5, marginTop: 10 }}>限制：只可短摘錄 + 連結 + 自行摘要；不可搬運全文或付費內容。</div>
-        </a>;
+        </div>;
       })}
     </div>}
 
     {!loading && mode === 'posts' && <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill,minmax(320px,1fr))', gap: 12 }}>
       {filtered.map(p => {
         const sc = SC[normSport(p.sport)] || C.navy;
-        return <a key={p.id} href={p.url || '#'} target="_blank" rel="noopener noreferrer" style={{ textDecoration: 'none', color: 'inherit', display: 'block', background: C.white, border: `1px solid ${C.border}`, borderTop: `4px solid ${sc}`, borderRadius: 12, padding: '15px 16px', minHeight: 205 }}>
-          <div style={{ display: 'flex', gap: 7, flexWrap: 'wrap', marginBottom: 10 }}><Chip color={sc}>{normSport(p.sport)}</Chip><Chip color={C.muted}>{p.sourceLabel}</Chip><Chip color={C.amber}>{p.stance}</Chip>{p.publishedAt && <span style={{ fontSize: 10, color: C.muted, padding: '3px 0' }}>{timeAgo(p.publishedAt)}</span>}</div>
+        return <div key={p.id} style={{ textDecoration: 'none', color: 'inherit', display: 'block', background: C.white, border: `1px solid ${C.border}`, borderTop: `4px solid ${sc}`, borderRadius: 12, padding: '15px 16px', minHeight: 205 }}>
+          <div style={{ display: 'flex', gap: 7, flexWrap: 'wrap', marginBottom: 10 }}><Chip color={sc}>{normSport(p.sport)}</Chip><Chip color={C.muted}>{p.sourceLabel}</Chip><Chip color={C.amber}>{p.stance}</Chip>{p.isBootstrap && <Chip color={C.green}>預載對照</Chip>}{p.publishedAt && <span style={{ fontSize: 10, color: C.muted, padding: '3px 0' }}>{timeAgo(p.publishedAt)}</span>}</div>
           <div style={{ fontSize: 16, fontWeight: 950, color: C.dark, lineHeight: 1.45, marginBottom: 8 }}>{p.title}</div>
           {p.summaryZh && <div style={{ fontSize: 12, color: C.dark, lineHeight: 1.65, marginBottom: 8 }}>{p.summaryZh}</div>}
           {p.shortExcerpt && <div style={{ fontSize: 11, color: C.muted, lineHeight: 1.55, padding: 9, background: C.panel, borderRadius: 8 }}>短摘錄：{p.shortExcerpt}</div>}
-          <div style={{ marginTop: 10, fontSize: 11, color: C.navy, fontWeight: 900 }}>查看來源 →</div>
-        </a>;
+          {p.signalEdgeInterpretation && <div style={{ fontSize: 11, color: C.dark, lineHeight: 1.55, padding: 9, background: '#F0FDF4', border: '1px solid #BBF7D0', borderRadius: 8, marginTop: 8 }}><b>SignalEdge 二次分析：</b>{p.signalEdgeInterpretation}</div>}
+          <div style={{ marginTop: 10, fontSize: 11, color: C.muted, fontWeight: 900 }}>來源已存證於 SignalEdge，不作主要導流</div>
+        </div>;
       })}
     </div>}
 
     {!loading && mode === 'manual' && <div style={{ display: 'grid', gap: 12 }}>
       {isAdmin && <div style={{ background: C.white, border: `1px solid ${C.border}`, borderRadius: 12, padding: 16 }}>
         <div style={{ fontSize: 16, fontWeight: 950, marginBottom: 6 }}>人工補強國外分析大師觀點</div>
-        <div style={{ fontSize: 12, color: C.muted, lineHeight: 1.6, marginBottom: 12 }}>當某些私人分析師沒有 RSS / API 時，可以手動補短摘錄與來源連結；下一次分析會自動匹配到賽事大師牆。</div>
+        <div style={{ fontSize: 12, color: C.muted, lineHeight: 1.6, marginBottom: 12 }}>當某些私人分析師沒有 RSS / API 時，可以手動補短摘錄與來源存證；下一次分析會自動匹配到賽事大師牆，站內呈現 SignalEdge 二次分析。</div>
         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit,minmax(180px,1fr))', gap: 10 }}>
           <Field title="分析師 / 來源"><input style={input} value={form.sourceName} onChange={e => setForm(p => ({ ...p, sourceName: e.target.value }))} placeholder="例：Substack 作者 / YouTube 分析師" /></Field>
           <Field title="平台"><input style={input} value={form.sourceLabel} onChange={e => setForm(p => ({ ...p, sourceLabel: e.target.value }))} placeholder="YouTube / X / Substack / Blog" /></Field>
@@ -275,7 +308,7 @@ export default function InternationalInsights({ role }) {
           <div style={{ fontSize: 11, color: C.muted, fontWeight: 800, marginTop: 5 }}>{p.sourceName}{p.sourceLabel ? ` · ${p.sourceLabel}` : ''}</div>
           {p.summaryZh && <div style={{ fontSize: 12, color: C.dark, lineHeight: 1.65, marginTop: 10 }}><b>中文摘要：</b>{p.summaryZh}</div>}
           {p.shortExcerpt && <div style={{ fontSize: 11, color: C.muted, lineHeight: 1.55, marginTop: 8, padding: 9, background: C.panel, borderRadius: 8 }}>短摘錄：{p.shortExcerpt}</div>}
-          {p.url && <a href={p.url} target="_blank" rel="noopener noreferrer" style={{ display: 'inline-block', marginTop: 10, fontSize: 11, color: C.navy, fontWeight: 900, textDecoration: 'none' }}>查看來源 →</a>}
+          {p.url && <div style={{ display: 'inline-block', marginTop: 10, fontSize: 11, color: C.muted, fontWeight: 900 }}>來源已存證於系統</div>}
         </div>;
       })}</div>
     </div>}
@@ -283,15 +316,15 @@ export default function InternationalInsights({ role }) {
     {!loading && mode === 'news' && <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill,minmax(320px,1fr))', gap: 12 }}>
       {filtered.map(a => {
         const sc = SC[normSport(a.sport)] || C.navy;
-        return <a key={a.id} href={a.url || '#'} target="_blank" rel="noopener noreferrer" style={{ textDecoration: 'none', color: 'inherit', display: 'block', background: C.white, border: `1px solid ${C.border}`, borderTop: `4px solid ${sc}`, borderRadius: 12, padding: '15px 16px', minHeight: 145 }}>
+        return <div key={a.id} style={{ textDecoration: 'none', color: 'inherit', display: 'block', background: C.white, border: `1px solid ${C.border}`, borderTop: `4px solid ${sc}`, borderRadius: 12, padding: '15px 16px', minHeight: 145 }}>
           <div style={{ display: 'flex', gap: 8, alignItems: 'center', marginBottom: 10, flexWrap: 'wrap' }}><Chip color={sc}>{normSport(a.sport)}</Chip><Chip color={C.muted}>{a.sourceLabel}</Chip>{a.publishedAt && <span style={{ fontSize: 10, color: C.muted }}>{timeAgo(a.publishedAt)}</span>}</div>
           <div style={{ fontSize: 15, fontWeight: 950, color: C.dark, lineHeight: 1.45, marginBottom: 8 }}>{a.titleDisplay}</div>
           {a.summaryDisplay && <div style={{ fontSize: 12, color: C.muted, lineHeight: 1.65 }}>{a.summaryDisplay}</div>}
-        </a>;
+        </div>;
       })}
     </div>}
 
     {!loading && filtered.length === 0 && <div style={{ background: C.white, border: `1px solid ${C.border}`, borderRadius: 12, padding: 34, textAlign: 'center', color: C.muted }}>目前沒有符合篩選的資料。</div>}
-    <div style={{ marginTop: 14, padding: '10px', background: '#F6F7FA', border: `1px solid ${C.border}`, borderRadius: 8, fontSize: 11, color: C.muted, textAlign: 'center' }}>國外分析大師 = 公開來源自動整理 + 人工短摘錄補強 + SignalEdge 模型對照；AI 只能讀 DATA_BLOCK，不會自己創造大師推薦。</div>
+    <div style={{ marginTop: 14, padding: '10px', background: '#F6F7FA', border: `1px solid ${C.border}`, borderRadius: 8, fontSize: 11, color: C.muted, textAlign: 'center' }}>國外分析大師 = 站內情報庫 + 人工補強 + 賽事情報牆 + SignalEdge 決策引擎；外部來源只作存證，主體內容留在 SignalEdge。</div>
   </div></div>;
 }
