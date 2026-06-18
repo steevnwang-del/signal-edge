@@ -154,7 +154,11 @@ const writeAnalysis = async (ctx, id, data) => {
 };
 
 const isAuthorized = (req) => {
-  if (process.env.CRON_SECRET && req.headers.authorization === `Bearer ${process.env.CRON_SECRET}`) return true;
+  const auth = req.headers.authorization || req.headers.Authorization;
+  const ua = String(req.headers['user-agent'] || req.headers['User-Agent'] || '');
+  const isVercelCron = req.method === 'GET' && ua.includes('vercel-cron');
+  if (process.env.CRON_SECRET && auth === `Bearer ${process.env.CRON_SECRET}`) return true;
+  if (!process.env.CRON_SECRET && isVercelCron) return true;
   if (req.method === 'POST' && req.headers['x-admin-trigger']) return true;
   if (process.env.NODE_ENV !== 'production') return true;
   return false;

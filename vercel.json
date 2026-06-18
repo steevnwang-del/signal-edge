@@ -4,7 +4,7 @@
     { "path": "/api/cron/generate-analysis", "schedule": "0 22 * * *" },
     { "path": "/api/cron/refresh-news", "schedule": "0 4 * * *" },
     { "path": "/api/cron/refresh-insights", "schedule": "30 4 * * *" },
-    { "path": "/api/cron/refresh-foreign-masters", "schedule": "0 */2 * * *" }
+    { "path": "/api/cron/refresh-foreign-masters", "schedule": "15 5 * * *" }
   ],
   "functions": {
     "api/cron/generate-analysis.js": { "maxDuration": 60 },

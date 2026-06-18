@@ -71,3 +71,8 @@ GROQ_API_KEY
 ```
 
 `API_SPORTS_KEY` and `API_FOOTBALL_KEY` use fallback logic in the source layer.
+
+
+## V6F-1 deployment hotfix
+
+This package keeps all Vercel cron schedules to once per day so Hobby deployments do not fail on cron frequency limits. For high-frequency updates, keep the API endpoints and trigger them externally with `Authorization: Bearer <CRON_SECRET>`. Cron endpoints also accept official Vercel Cron requests when `CRON_SECRET` is not configured, but setting `CRON_SECRET` in Vercel is recommended.
